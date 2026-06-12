@@ -7,13 +7,18 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 func render(value any, indent string) []byte {
-	var buf bytes.Buffer
+	return renderCap(value, indent, 0)
+}
+
+func renderCap(value any, indent string, capacity int) []byte {
+	buf := make(jsonBytes, 0, capacity)
 	writeValue(&buf, value, indent, 0)
 	writeByte(&buf, '\n')
-	return buf.Bytes()
+	return buf
 }
 
 type byteWriter interface {
@@ -76,11 +81,12 @@ func writeObject(buf byteWriter, object map[string]any, indent string, depth int
 		writeString(buf, "{}")
 		return
 	}
-	keys := make([]string, 0, len(object))
-	for key := range object {
-		keys = append(keys, key)
+	var keyStorage [8]string
+	keys := keyStorage[:0]
+	if len(object) > len(keyStorage) {
+		keys = make([]string, 0, len(object))
 	}
-	sort.Strings(keys)
+	keys = appendSortedObjectKeys(keys, object)
 	if shouldInlineObject(object, keys) {
 		writeByte(buf, '{')
 		for _, key := range keys {
@@ -104,6 +110,14 @@ func writeObject(buf byteWriter, object map[string]any, indent string, depth int
 	writeByte(buf, '\n')
 	writeIndent(buf, indent, depth)
 	writeByte(buf, '}')
+}
+
+func appendSortedObjectKeys(keys []string, object map[string]any) []string {
+	for key := range object {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func writeArray(buf byteWriter, array []any, indent string, depth int) {
@@ -150,11 +164,12 @@ func shouldInlineObject(object map[string]any, keys []string) bool {
 				return false
 			}
 		case map[string]any:
-			childKeys := make([]string, 0, len(value))
-			for childKey := range value {
-				childKeys = append(childKeys, childKey)
+			var childKeyStorage [8]string
+			childKeys := childKeyStorage[:0]
+			if len(value) > len(childKeyStorage) {
+				childKeys = make([]string, 0, len(value))
 			}
-			sort.Strings(childKeys)
+			childKeys = appendSortedObjectKeys(childKeys, value)
 			if !shouldInlineObject(value, childKeys) {
 				return false
 			}
@@ -177,11 +192,12 @@ func shouldInlineArray(array []any) bool {
 				return false
 			}
 		case map[string]any:
-			keys := make([]string, 0, len(value))
-			for key := range value {
-				keys = append(keys, key)
+			var keyStorage [8]string
+			keys := keyStorage[:0]
+			if len(value) > len(keyStorage) {
+				keys = make([]string, 0, len(value))
 			}
-			sort.Strings(keys)
+			keys = appendSortedObjectKeys(keys, value)
 			if !shouldInlineObject(value, keys) {
 				return false
 			}
@@ -223,11 +239,12 @@ func renderScalar(value any) string {
 		return buf.String()
 	case map[string]any:
 		var buf bytes.Buffer
-		keys := make([]string, 0, len(value))
-		for key := range value {
-			keys = append(keys, key)
+		var keyStorage [8]string
+		keys := keyStorage[:0]
+		if len(value) > len(keyStorage) {
+			keys = make([]string, 0, len(value))
 		}
-		sort.Strings(keys)
+		keys = appendSortedObjectKeys(keys, value)
 		if shouldInlineObject(value, keys) {
 			writeByte(&buf, '{')
 			for _, key := range keys {
@@ -262,10 +279,22 @@ func canBareValue(value string) bool {
 }
 
 func hasStructuralRune(value string) bool {
-	for _, r := range value {
-		if r == '{' || r == '}' || r == '[' || r == ']' || r == '"' || r == '\'' || r == ',' || unicode.IsSpace(r) {
+	for i := 0; i < len(value); {
+		b := value[i]
+		if b < utf8.RuneSelf {
+			switch b {
+			case '{', '}', '[', ']', '"', '\'', ',', ' ', '\t', '\n', '\r':
+				return true
+			}
+			i++
+			continue
+		}
+
+		r, size := utf8.DecodeRuneInString(value[i:])
+		if unicode.IsSpace(r) {
 			return true
 		}
+		i += size
 	}
 	return false
 }

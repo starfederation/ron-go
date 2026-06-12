@@ -1,20 +1,22 @@
 package ron
 
 import (
-	"bytes"
 	"encoding/json"
-	"sort"
 	"strconv"
 )
 
 func renderCompact(value any) []byte {
-	var buf bytes.Buffer
+	return renderCompactCap(value, 0)
+}
+
+func renderCompactCap(value any, capacity int) []byte {
+	buf := make(jsonBytes, 0, capacity)
 	if object, ok := value.(map[string]any); ok {
 		writeCompactObject(&buf, object, true)
 	} else {
 		writeCompactValue(&buf, value)
 	}
-	return buf.Bytes()
+	return buf
 }
 
 func writeCompactValue(buf byteWriter, value any) {
@@ -54,11 +56,12 @@ func writeCompactObject(buf byteWriter, object map[string]any, top bool) {
 		return
 	}
 
-	keys := make([]string, 0, len(object))
-	for key := range object {
-		keys = append(keys, key)
+	var keyStorage [8]string
+	keys := keyStorage[:0]
+	if len(object) > len(keyStorage) {
+		keys = make([]string, 0, len(object))
 	}
-	sort.Strings(keys)
+	keys = appendSortedObjectKeys(keys, object)
 
 	if !top {
 		writeByte(buf, '{')

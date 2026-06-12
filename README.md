@@ -49,16 +49,24 @@ func main() {
 }
 ```
 
-For repeated RON to JSON conversions, reuse `JSONBuilder`:
+For repeated conversions, reuse builders:
 
 ```go
-var builder ron.JSONBuilder
-jsonBody, err := ron.ToJSONInto(&builder, ronBody)
+var jsonBuilder ron.JSONBuilder
+jsonBody, err := ron.ToJSONInto(&jsonBuilder, ronBody)
 if err != nil {
     panic(err)
 }
 println(string(jsonBody))
-builder.Reset()
+jsonBuilder.Reset()
+
+var ronBuilder ron.RONBuilder
+ronBody, err = ron.FromJSONCompactInto(&ronBuilder, jsonBody)
+if err != nil {
+    panic(err)
+}
+println(string(ronBody))
+ronBuilder.Reset()
 ```
 
 ## Conformance
