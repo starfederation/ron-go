@@ -123,6 +123,42 @@ func TestConformanceInvalidJSON(t *testing.T) {
 	}
 }
 
+func TestToJSONDuplicateKeysUseLastValue(t *testing.T) {
+	got, err := ToJSON([]byte("item {name first name second count 1}"))
+	if err != nil {
+		t.Fatalf("ToJSON: %v", err)
+	}
+
+	want := []byte(`{"item":{"count":1,"name":"second"}}`)
+	assertBytesEqual(t, want, got)
+}
+
+func TestFromJSONCompactDuplicateKeysUseLastValue(t *testing.T) {
+	got, err := FromJSONCompact([]byte(`{"item":{"name":"first","name":"second","count":1}}`))
+	if err != nil {
+		t.Fatalf("FromJSONCompact: %v", err)
+	}
+
+	want := []byte("item{count 1 name second}")
+	assertBytesEqual(t, want, got)
+}
+
+func TestRONBuilderReuse(t *testing.T) {
+	var builder RONBuilder
+	pretty, err := FromJSONInto(&builder, []byte(`{"a":1}`))
+	if err != nil {
+		t.Fatalf("FromJSONInto: %v", err)
+	}
+	assertBytesEqual(t, []byte("{a 1}\n"), pretty)
+
+	builder.Reset()
+	compact, err := FromJSONCompactInto(&builder, []byte(`{"b":2}`))
+	if err != nil {
+		t.Fatalf("FromJSONCompactInto: %v", err)
+	}
+	assertBytesEqual(t, []byte("b 2"), compact)
+}
+
 func loadConformanceManifest(t *testing.T) (string, conformanceManifest) {
 	t.Helper()
 	root := conformanceRoot(t)

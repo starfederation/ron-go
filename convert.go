@@ -66,6 +66,24 @@ type fromJSONOptions struct {
 	indent string
 }
 
+// RONBuilder reuses memory across JSON to RON conversions.
+type RONBuilder struct {
+	buf jsonBytes
+}
+
+// Reset releases the currently buffered RON bytes while retaining capacity.
+func (b *RONBuilder) Reset() {
+	b.buf = b.buf[:0]
+}
+
+func (b *RONBuilder) resetCap(capacity int) {
+	if cap(b.buf) < capacity {
+		b.buf = make(jsonBytes, 0, capacity)
+		return
+	}
+	b.buf = b.buf[:0]
+}
+
 // Indent sets the pretty RON indentation string.
 func Indent(indent string) FromJSONOption {
 	return func(opts *fromJSONOptions) {
@@ -77,8 +95,8 @@ func Indent(indent string) FromJSONOption {
 	}
 }
 
-// FromJSON converts JSON to pretty RON.
-func FromJSON(src []byte, options ...FromJSONOption) ([]byte, error) {
+// FromJSON converts JSON to pretty RON using this builder.
+func (b *RONBuilder) FromJSON(src []byte, options ...FromJSONOption) ([]byte, error) {
 	opts := fromJSONOptions{indent: "  "}
 	for _, option := range options {
 		option(&opts)
@@ -87,16 +105,53 @@ func FromJSON(src []byte, options ...FromJSONOption) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return render(value, opts.indent), nil
+	b.resetCap(len(src) * 2)
+	writeValue(&b.buf, value, opts.indent, 0)
+	writeByte(&b.buf, '\n')
+	return b.buf, nil
 }
 
-// FromJSONCompact converts JSON to compact RON.
-func FromJSONCompact(src []byte) ([]byte, error) {
+// FromJSONCompact converts JSON to compact RON using this builder.
+func (b *RONBuilder) FromJSONCompact(src []byte) ([]byte, error) {
 	value, err := decodeJSON(src)
 	if err != nil {
 		return nil, err
 	}
-	return renderCompact(value), nil
+	b.resetCap(len(src))
+	if object, ok := value.(map[string]any); ok {
+		writeCompactObject(&b.buf, object, true)
+	} else {
+		writeCompactValue(&b.buf, value)
+	}
+	return b.buf, nil
+}
+
+// FromJSON converts JSON to pretty RON.
+func FromJSON(src []byte, options ...FromJSONOption) ([]byte, error) {
+	var builder RONBuilder
+	return builder.FromJSON(src, options...)
+}
+
+// FromJSONInto converts JSON to pretty RON using dst when non-nil.
+func FromJSONInto(dst *RONBuilder, src []byte, options ...FromJSONOption) ([]byte, error) {
+	if dst == nil {
+		return FromJSON(src, options...)
+	}
+	return dst.FromJSON(src, options...)
+}
+
+// FromJSONCompact converts JSON to compact RON.
+func FromJSONCompact(src []byte) ([]byte, error) {
+	var builder RONBuilder
+	return builder.FromJSONCompact(src)
+}
+
+// FromJSONCompactInto converts JSON to compact RON using dst when non-nil.
+func FromJSONCompactInto(dst *RONBuilder, src []byte) ([]byte, error) {
+	if dst == nil {
+		return FromJSONCompact(src)
+	}
+	return dst.FromJSONCompact(src)
 }
 
 // MarshalCompact returns value as compact RON.
@@ -106,11 +161,8 @@ func MarshalCompact(value any) ([]byte, error) {
 		return nil, err
 	}
 
-	decoded, err := decodeJSON(body)
-	if err != nil {
-		return nil, err
-	}
-	return renderCompact(decoded), nil
+	var builder RONBuilder
+	return builder.FromJSONCompact(body)
 }
 
 func decodeJSON(src []byte) (any, error) {
