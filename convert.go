@@ -6,87 +6,111 @@ import (
 	"io"
 )
 
-// ToJSONOption configures RON to JSON conversion.
-type ToJSONOption func(*toJSONOptions)
+// Option configures RON and JSON conversion.
+type Option func(*formatOptions)
 
-type toJSONOptions struct {
-	prefix string
-	indent string
+type formatOptions struct {
+	prefix      string
+	indent      string
+	isPretty    bool
+	isCanonical bool
 }
 
 // PrettyJSON enables indented JSON output.
-func PrettyJSON(prefix, indent string) ToJSONOption {
-	return func(opts *toJSONOptions) {
+func PrettyJSON(prefix, indent string) Option {
+	return func(opts *formatOptions) {
+		opts.isPretty = true
 		opts.prefix = prefix
 		opts.indent = indent
 	}
 }
 
-// JSONBuilder reuses memory across RON to JSON conversions.
-type JSONBuilder struct {
-	buf jsonBytes
-}
-
-// Reset releases the currently buffered JSON bytes while retaining capacity.
-func (b *JSONBuilder) Reset() {
-	b.buf = b.buf[:0]
-}
-
-// ToJSON converts RON to JSON using this builder.
-func (b *JSONBuilder) ToJSON(src []byte, options ...ToJSONOption) ([]byte, error) {
-	opts := toJSONOptions{}
-	for _, option := range options {
-		option(&opts)
+// IsPretty selects multiline pretty output when true or compact output when false.
+func IsPretty(pretty bool) Option {
+	return func(opts *formatOptions) {
+		opts.isPretty = pretty
 	}
-	b.buf = b.buf[:0]
-	if err := writeRONJSONInto(&b.buf, src, opts.prefix, opts.indent); err != nil {
-		return nil, err
+}
+
+// IsCanonical selects RFC 8785 UTF-16 object key ordering when true.
+// When false, source object order is preserved when available; unordered Go maps use canonical order.
+func IsCanonical(canonical bool) Option {
+	return func(opts *formatOptions) {
+		opts.isCanonical = canonical
 	}
-	return b.buf, nil
 }
 
-// ToJSON converts RON to compact JSON unless PrettyJSON is provided.
-func ToJSON(src []byte, options ...ToJSONOption) ([]byte, error) {
-	var builder JSONBuilder
-	return builder.ToJSON(src, options...)
+// ToJSON converts RON to compact JSON unless pretty output is requested.
+func ToJSON(src []byte, options ...Option) ([]byte, error) {
+	var buf bytes.Buffer
+	return ToJSONInto(&buf, src, options...)
 }
 
-// ToJSONInto converts RON to JSON using dst when non-nil.
-func ToJSONInto(dst *JSONBuilder, src []byte, options ...ToJSONOption) ([]byte, error) {
+// ToJSONInto appends RON converted to JSON to dst.
+func ToJSONInto(dst *bytes.Buffer, src []byte, options ...Option) ([]byte, error) {
 	if dst == nil {
 		return ToJSON(src, options...)
 	}
-	return dst.ToJSON(src, options...)
-}
 
-// FromJSONOption configures JSON to RON conversion.
-type FromJSONOption func(*fromJSONOptions)
-
-type fromJSONOptions struct {
-	indent string
-}
-
-// RONBuilder reuses memory across JSON to RON conversions.
-type RONBuilder struct {
-	buf jsonBytes
-}
-
-// Reset releases the currently buffered RON bytes while retaining capacity.
-func (b *RONBuilder) Reset() {
-	b.buf = b.buf[:0]
-}
-
-func (b *RONBuilder) resetCap(capacity int) {
-	if cap(b.buf) < capacity {
-		b.buf = make(jsonBytes, 0, capacity)
-		return
+	opts := formatOptions{isCanonical: true}
+	for _, option := range options {
+		option(&opts)
 	}
-	b.buf = b.buf[:0]
+	if opts.isPretty && opts.indent == "" {
+		opts.indent = "  "
+	}
+	if !opts.isPretty {
+		opts.prefix = ""
+		opts.indent = ""
+	}
+
+	p := parser{src: src}
+	p.skipSpace()
+	if p.pos < len(p.src) && p.src[p.pos] != '{' && p.src[p.pos] != '[' {
+		start := p.pos
+		bufStart := dst.Len()
+		members := jsonMembers{Values: make([]jsonMember, 0, 4)}
+		var values bytes.Buffer
+		for {
+			p.skipSpace()
+			if p.pos == len(p.src) {
+				if err := p.writeJSONObjectMembers(dst, members.Values, values.Bytes(), opts.prefix, opts.indent, 0, opts.isCanonical); err != nil {
+					return nil, err
+				}
+				return dst.Bytes(), nil
+			}
+			if p.src[p.pos] == '{' || p.src[p.pos] == '[' {
+				break
+			}
+
+			key, err := p.parseKeyCurrent()
+			if err != nil {
+				break
+			}
+
+			valueStart := values.Len()
+			if err := p.writeJSONValue(&values, opts.prefix, opts.indent, 1, opts.isCanonical); err != nil {
+				break
+			}
+			members.Set(key, valueStart, values.Len())
+		}
+		dst.Truncate(bufStart)
+		p.pos = start
+	}
+
+	if err := p.writeJSONValue(dst, opts.prefix, opts.indent, 0, opts.isCanonical); err != nil {
+		return nil, err
+	}
+	p.skipSpace()
+	if p.pos != len(p.src) {
+		return nil, p.errorf("unexpected trailing data")
+	}
+	return dst.Bytes(), nil
 }
 
 // Indent sets the pretty RON indentation string.
-func Indent(indent string) FromJSONOption {
-	return func(opts *fromJSONOptions) {
+func Indent(indent string) Option {
+	return func(opts *formatOptions) {
 		if indent == "" {
 			opts.indent = "  "
 			return
@@ -95,63 +119,53 @@ func Indent(indent string) FromJSONOption {
 	}
 }
 
-// FromJSON converts JSON to pretty RON using this builder.
-func (b *RONBuilder) FromJSON(src []byte, options ...FromJSONOption) ([]byte, error) {
-	opts := fromJSONOptions{indent: "  "}
-	for _, option := range options {
-		option(&opts)
-	}
-	value, err := decodeJSON(src)
-	if err != nil {
-		return nil, err
-	}
-	b.resetCap(len(src) * 2)
-	writeValue(&b.buf, value, opts.indent, 0)
-	writeByte(&b.buf, '\n')
-	return b.buf, nil
+// FromJSON converts JSON to pretty RON unless compact output is requested.
+func FromJSON(src []byte, options ...Option) ([]byte, error) {
+	var buf bytes.Buffer
+	return FromJSONInto(&buf, src, options...)
 }
 
-// FromJSONCompact converts JSON to compact RON using this builder.
-func (b *RONBuilder) FromJSONCompact(src []byte) ([]byte, error) {
-	value, err := decodeJSON(src)
-	if err != nil {
-		return nil, err
-	}
-	b.resetCap(len(src))
-	if object, ok := value.(map[string]any); ok {
-		writeCompactObject(&b.buf, object, true)
-	} else {
-		writeCompactValue(&b.buf, value)
-	}
-	return b.buf, nil
-}
-
-// FromJSON converts JSON to pretty RON.
-func FromJSON(src []byte, options ...FromJSONOption) ([]byte, error) {
-	var builder RONBuilder
-	return builder.FromJSON(src, options...)
-}
-
-// FromJSONInto converts JSON to pretty RON using dst when non-nil.
-func FromJSONInto(dst *RONBuilder, src []byte, options ...FromJSONOption) ([]byte, error) {
+// FromJSONInto appends JSON converted to RON to dst.
+func FromJSONInto(dst *bytes.Buffer, src []byte, options ...Option) ([]byte, error) {
 	if dst == nil {
 		return FromJSON(src, options...)
 	}
-	return dst.FromJSON(src, options...)
+
+	opts := formatOptions{
+		indent:      "  ",
+		isPretty:    true,
+		isCanonical: true,
+	}
+	for _, option := range options {
+		option(&opts)
+	}
+	if opts.isPretty && opts.indent == "" {
+		opts.indent = "  "
+	}
+	value, err := decodeJSON(src)
+	if err != nil {
+		return nil, err
+	}
+	if opts.isPretty {
+		dst.Grow(len(src) * 2)
+		writeValue(dst, value, opts.indent, 0, opts.isCanonical)
+		dst.WriteByte('\n')
+		return dst.Bytes(), nil
+	}
+
+	dst.Grow(len(src))
+	writeCompactValue(dst, value, true, opts.isCanonical)
+	return dst.Bytes(), nil
 }
 
 // FromJSONCompact converts JSON to compact RON.
 func FromJSONCompact(src []byte) ([]byte, error) {
-	var builder RONBuilder
-	return builder.FromJSONCompact(src)
+	return FromJSON(src, IsPretty(false))
 }
 
-// FromJSONCompactInto converts JSON to compact RON using dst when non-nil.
-func FromJSONCompactInto(dst *RONBuilder, src []byte) ([]byte, error) {
-	if dst == nil {
-		return FromJSONCompact(src)
-	}
-	return dst.FromJSONCompact(src)
+// FromJSONCompactInto appends JSON converted to compact RON to dst.
+func FromJSONCompactInto(dst *bytes.Buffer, src []byte) ([]byte, error) {
+	return FromJSONInto(dst, src, IsPretty(false))
 }
 
 // MarshalCompact returns value as compact RON.
@@ -160,24 +174,85 @@ func MarshalCompact(value any) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	var builder RONBuilder
-	return builder.FromJSONCompact(body)
+	return FromJSONCompact(body)
 }
 
 func decodeJSON(src []byte) (any, error) {
-	var value any
 	dec := json.NewDecoder(bytes.NewReader(src))
 	dec.UseNumber()
-	if err := dec.Decode(&value); err != nil {
+
+	value, err := decodeJSONValue(dec)
+	if err != nil {
 		return nil, err
 	}
 
-	var trailing any
-	if err := dec.Decode(&trailing); err == nil {
+	if _, err := dec.Token(); err == nil {
 		return nil, newError("unexpected trailing JSON")
 	} else if err != io.EOF {
 		return nil, err
 	}
 	return value, nil
+}
+
+func decodeJSONValue(dec *json.Decoder) (any, error) {
+	token, err := dec.Token()
+	if err != nil {
+		return nil, err
+	}
+
+	switch token := token.(type) {
+	case nil, bool, string, json.Number:
+		return token, nil
+	case float64:
+		return token, nil
+	case json.Delim:
+		switch token {
+		case '{':
+			var object orderedObject
+			for dec.More() {
+				keyToken, err := dec.Token()
+				if err != nil {
+					return nil, err
+				}
+				key, ok := keyToken.(string)
+				if !ok {
+					return nil, newError("expected JSON object key")
+				}
+
+				value, err := decodeJSONValue(dec)
+				if err != nil {
+					return nil, err
+				}
+				object.Set(key, value)
+			}
+
+			end, err := dec.Token()
+			if err != nil {
+				return nil, err
+			}
+			if end != json.Delim('}') {
+				return nil, newError("expected JSON object end")
+			}
+			return object, nil
+		case '[':
+			array := make([]any, 0, 4)
+			for dec.More() {
+				value, err := decodeJSONValue(dec)
+				if err != nil {
+					return nil, err
+				}
+				array = append(array, value)
+			}
+
+			end, err := dec.Token()
+			if err != nil {
+				return nil, err
+			}
+			if end != json.Delim(']') {
+				return nil, newError("expected JSON array end")
+			}
+			return array, nil
+		}
+	}
+	return nil, newError("unexpected JSON token")
 }

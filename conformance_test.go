@@ -2,11 +2,17 @@ package ron
 
 import (
 	"bytes"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"testing"
+
+	"github.com/zeebo/xxh3"
 )
 
 type conformanceManifest struct {
@@ -18,21 +24,60 @@ type conformanceManifest struct {
 }
 
 type conformanceFormatting struct {
-	JSONPrefix               string `json:"jsonPrefix"`
-	JSONIndent               string `json:"jsonIndent"`
-	RONIndent                string `json:"ronIndent"`
-	PrettyRONTrailingNewline bool   `json:"prettyRONTrailingNewline"`
-	ObjectKeyOrder           string `json:"objectKeyOrder"`
+	JSONPrefix                string                   `json:"jsonPrefix"`
+	JSONIndent                string                   `json:"jsonIndent"`
+	RONIndent                 string                   `json:"ronIndent"`
+	PrettyRONTrailingNewline  bool                     `json:"prettyRONTrailingNewline"`
+	ObjectKeyOrder            string                   `json:"objectKeyOrder"`
+	CanonicalRON              string                   `json:"canonicalRON"`
+	CanonicalRONHashAlgorithm string                   `json:"canonicalRONHashAlgorithm"`
+	ExpectedPrettyOptions     conformanceFormatOptions `json:"expectedPrettyOptions"`
+	ExpectedCompactOptions    conformanceFormatOptions `json:"expectedCompactOptions"`
+}
+
+type conformanceFormatOptions struct {
+	IsPretty    bool `json:"isPretty"`
+	IsCanonical bool `json:"isCanonical"`
 }
 
 type conformanceValidCase struct {
-	Name                string   `json:"name"`
-	RONInputs           []string `json:"ronInputs"`
-	JSONInput           string   `json:"jsonInput"`
-	ExpectedPrettyJSON  string   `json:"expectedPrettyJSON"`
-	ExpectedCompactJSON string   `json:"expectedCompactJSON"`
-	ExpectedPrettyRON   string   `json:"expectedPrettyRON"`
-	ExpectedCompactRON  string   `json:"expectedCompactRON"`
+	Name                     string   `json:"name"`
+	RONInputs                []string `json:"ronInputs"`
+	JSONInput                string   `json:"jsonInput"`
+	ExpectedPrettyJSON       string   `json:"expectedPrettyJSON"`
+	ExpectedCompactJSON      string   `json:"expectedCompactJSON"`
+	ExpectedPrettyRON        string   `json:"expectedPrettyRON"`
+	ExpectedCompactRON       string   `json:"expectedCompactRON"`
+	ExpectedCanonicalRONXXH3 string   `json:"expectedCanonicalRONXXH3"`
+}
+
+type rfc8785Manifest struct {
+	Valid               []rfc8785ValidCase       `json:"valid"`
+	NumberSerialization string                   `json:"numberSerialization"`
+	InvalidIJSON        []rfc8785InvalidJSONCase `json:"invalidIJSON"`
+}
+
+type rfc8785ValidCase struct {
+	Name                      string `json:"name"`
+	InputJSON                 string `json:"inputJSON"`
+	ExpectedCanonicalJSON     string `json:"expectedCanonicalJSON"`
+	ExpectedCanonicalUTF8Hex  string `json:"expectedCanonicalUTF8Hex"`
+	ExpectedCanonicalJSONXXH3 string `json:"expectedCanonicalJSONXXH3"`
+}
+
+type rfc8785InvalidJSONCase struct {
+	Name      string `json:"name"`
+	InputJSON string `json:"inputJSON"`
+}
+
+type rfc8785NumberSerialization struct {
+	Finite               []rfc8785NumberCase `json:"finite"`
+	RejectedNativeValues []rfc8785NumberCase `json:"rejectedNativeValues"`
+}
+
+type rfc8785NumberCase struct {
+	IEEE754Hex   string `json:"ieee754Hex"`
+	ExpectedJSON string `json:"expectedJSON"`
 }
 
 func TestConformanceValid(t *testing.T) {
@@ -83,11 +128,17 @@ func TestConformanceValid(t *testing.T) {
 			}
 			assertJSONEqual(t, jsonInput, prettyRONJSON)
 
-			compactRON, err := FromJSONCompact(jsonInput)
+			compactRON, err := FromJSON(jsonInput, IsPretty(false), IsCanonical(true))
 			if err != nil {
-				t.Fatalf("FromJSONCompact: %v", err)
+				t.Fatalf("FromJSON compact canonical: %v", err)
 			}
 			assertBytesEqual(t, expectedCompactRON, compactRON)
+			if tc.ExpectedCanonicalRONXXH3 != "" {
+				gotHash := formatXXH3Hash128(compactRON)
+				if gotHash != tc.ExpectedCanonicalRONXXH3 {
+					t.Fatalf("canonical RON XXH3 mismatch\nwant: %s\n got: %s", tc.ExpectedCanonicalRONXXH3, gotHash)
+				}
+			}
 			compactRONJSON, err := ToJSON(compactRON)
 			if err != nil {
 				t.Fatalf("ToJSON generated compact RON: %v", err)
@@ -123,6 +174,71 @@ func TestConformanceInvalidJSON(t *testing.T) {
 	}
 }
 
+func TestRFC8785CanonicalJSONValid(t *testing.T) {
+	root, manifest := loadRFC8785Manifest(t)
+	for _, tc := range manifest.Valid {
+		t.Run(tc.Name, func(t *testing.T) {
+			input := readConformanceFile(t, root, tc.InputJSON)
+			expectedJSON := readConformanceFile(t, root, tc.ExpectedCanonicalJSON)
+			expectedHex := readConformanceFile(t, root, tc.ExpectedCanonicalUTF8Hex)
+
+			got, err := canonicalJSON(input)
+			if err != nil {
+				t.Fatalf("canonicalJSON: %v", err)
+			}
+			assertBytesEqual(t, expectedJSON, got)
+			assertBytesEqual(t, bytes.TrimSpace(expectedHex), []byte(hex.EncodeToString(got)))
+
+			gotHash := formatXXH3Hash128(got)
+			if gotHash != tc.ExpectedCanonicalJSONXXH3 {
+				t.Fatalf("canonical JSON XXH3 mismatch\nwant: %s\n got: %s", tc.ExpectedCanonicalJSONXXH3, gotHash)
+			}
+		})
+	}
+}
+
+func TestRFC8785NumberSerialization(t *testing.T) {
+	root, manifest := loadRFC8785Manifest(t)
+	body := readConformanceFile(t, root, manifest.NumberSerialization)
+
+	var numbers rfc8785NumberSerialization
+	if err := json.Unmarshal(body, &numbers); err != nil {
+		t.Fatalf("unmarshal number serialization: %v", err)
+	}
+
+	for _, tc := range numbers.Finite {
+		t.Run(tc.IEEE754Hex, func(t *testing.T) {
+			value := parseFloat64Hex(t, tc.IEEE754Hex)
+			got, err := appendRFC8785Number(nil, value)
+			if err != nil {
+				t.Fatalf("appendRFC8785Number: %v", err)
+			}
+			assertBytesEqual(t, []byte(tc.ExpectedJSON), got)
+		})
+	}
+
+	for _, tc := range numbers.RejectedNativeValues {
+		t.Run("reject/"+tc.IEEE754Hex, func(t *testing.T) {
+			value := parseFloat64Hex(t, tc.IEEE754Hex)
+			if _, err := appendRFC8785Number(nil, value); err == nil {
+				t.Fatal("appendRFC8785Number accepted non-finite value")
+			}
+		})
+	}
+}
+
+func TestRFC8785InvalidIJSON(t *testing.T) {
+	root, manifest := loadRFC8785Manifest(t)
+	for _, tc := range manifest.InvalidIJSON {
+		t.Run(tc.Name, func(t *testing.T) {
+			input := readConformanceFile(t, root, tc.InputJSON)
+			if _, err := canonicalJSON(input); err == nil {
+				t.Fatal("canonicalJSON succeeded for invalid I-JSON")
+			}
+		})
+	}
+}
+
 func TestToJSONDuplicateKeysUseLastValue(t *testing.T) {
 	got, err := ToJSON([]byte("item {name first name second count 1}"))
 	if err != nil {
@@ -143,16 +259,16 @@ func TestFromJSONCompactDuplicateKeysUseLastValue(t *testing.T) {
 	assertBytesEqual(t, want, got)
 }
 
-func TestRONBuilderReuse(t *testing.T) {
-	var builder RONBuilder
-	pretty, err := FromJSONInto(&builder, []byte(`{"a":1}`))
+func TestRONBufferReuse(t *testing.T) {
+	var buf bytes.Buffer
+	pretty, err := FromJSONInto(&buf, []byte(`{"a":1}`))
 	if err != nil {
 		t.Fatalf("FromJSONInto: %v", err)
 	}
 	assertBytesEqual(t, []byte("{a 1}\n"), pretty)
 
-	builder.Reset()
-	compact, err := FromJSONCompactInto(&builder, []byte(`{"b":2}`))
+	buf.Reset()
+	compact, err := FromJSONCompactInto(&buf, []byte(`{"b":2}`))
 	if err != nil {
 		t.Fatalf("FromJSONCompactInto: %v", err)
 	}
@@ -161,7 +277,7 @@ func TestRONBuilderReuse(t *testing.T) {
 
 func loadConformanceManifest(t *testing.T) (string, conformanceManifest) {
 	t.Helper()
-	root := conformanceRoot(t)
+	root := testdataSubdir(t, "conformance")
 	body := readFile(t, filepath.Join(root, "manifest.json"))
 
 	var manifest conformanceManifest
@@ -171,19 +287,43 @@ func loadConformanceManifest(t *testing.T) (string, conformanceManifest) {
 	return root, manifest
 }
 
-func conformanceRoot(t *testing.T) string {
+func loadRFC8785Manifest(t *testing.T) (string, rfc8785Manifest) {
 	t.Helper()
-	if root := os.Getenv("RON_TESTDATA_DIR"); root != "" {
-		return filepath.Join(root, "conformance")
+	root := testdataSubdir(t, "rfc8785")
+	body := readFile(t, filepath.Join(root, "manifest.json"))
+
+	var manifest rfc8785Manifest
+	if err := json.Unmarshal(body, &manifest); err != nil {
+		t.Fatalf("unmarshal RFC 8785 manifest: %v", err)
+	}
+	return root, manifest
+}
+
+func testdataSubdir(t *testing.T, subdir string) string {
+	t.Helper()
+	if testdataRoot := os.Getenv("RON_TESTDATA_DIR"); testdataRoot != "" {
+		return filepath.Join(testdataRoot, subdir)
 	}
 
-	root := filepath.Join("testdata", "conformance")
-	if _, err := os.Stat(filepath.Join(root, "manifest.json")); err == nil {
-		return root
+	root := filepath.Join("testdata", subdir)
+	if _, err := os.Stat(filepath.Join(root, "manifest.json")); err != nil {
+		t.Skip("RON testdata unavailable; set RON_TESTDATA_DIR or run nix flake check")
 	}
+	return root
+}
 
-	t.Skip("RON conformance corpus unavailable; set RON_TESTDATA_DIR or run nix flake check")
-	return ""
+func formatXXH3Hash128(body []byte) string {
+	hash := xxh3.Hash128(body)
+	return fmt.Sprintf("%016x%016x", hash.Hi, hash.Lo)
+}
+
+func parseFloat64Hex(t *testing.T, value string) float64 {
+	t.Helper()
+	bits, err := strconv.ParseUint(value, 16, 64)
+	if err != nil {
+		t.Fatalf("parse float64 hex %q: %v", value, err)
+	}
+	return math.Float64frombits(bits)
 }
 
 func readConformanceFile(t *testing.T, root, path string) []byte {
@@ -222,5 +362,72 @@ func decodeJSONForTest(t *testing.T, body []byte) any {
 	if err != nil {
 		t.Fatalf("decode JSON %q: %v", body, err)
 	}
-	return value
+	return normalizeJSONForTest(value)
+}
+
+func normalizeJSONForTest(value any) any {
+	switch value := value.(type) {
+	case orderedObject:
+		object := make(map[string]any, len(value.Members))
+		for _, member := range value.Members {
+			object[member.Key] = normalizeJSONForTest(member.Value)
+		}
+		return object
+	case []any:
+		array := make([]any, len(value))
+		for i, item := range value {
+			array[i] = normalizeJSONForTest(item)
+		}
+		return array
+	default:
+		return value
+	}
+}
+
+func TestToJSONCanonicalOptionControlsObjectOrder(t *testing.T) {
+	nonCanonical, err := ToJSON([]byte("{b 1 a 2}"), IsCanonical(false))
+	if err != nil {
+		t.Fatalf("ToJSON non-canonical: %v", err)
+	}
+	assertBytesEqual(t, []byte(`{"b":1,"a":2}`), nonCanonical)
+
+	canonical, err := ToJSON([]byte("{b 1 a 2}"), IsCanonical(true))
+	if err != nil {
+		t.Fatalf("ToJSON canonical: %v", err)
+	}
+	assertBytesEqual(t, []byte(`{"a":2,"b":1}`), canonical)
+}
+
+func TestFromJSONOptionsControlPrettyAndCanonicalRON(t *testing.T) {
+	nonCanonicalCompact, err := FromJSON([]byte(`{"b":1,"a":2}`), IsPretty(false), IsCanonical(false))
+	if err != nil {
+		t.Fatalf("FromJSON compact non-canonical: %v", err)
+	}
+	assertBytesEqual(t, []byte("b 1 a 2"), nonCanonicalCompact)
+
+	canonicalCompact, err := FromJSON([]byte(`{"b":1,"a":2}`), IsPretty(false), IsCanonical(true))
+	if err != nil {
+		t.Fatalf("FromJSON compact canonical: %v", err)
+	}
+	assertBytesEqual(t, []byte("a 2 b 1"), canonicalCompact)
+
+	nonCanonicalPretty, err := FromJSON([]byte(`{"b":1,"a":2}`), IsPretty(true), IsCanonical(false))
+	if err != nil {
+		t.Fatalf("FromJSON pretty non-canonical: %v", err)
+	}
+	assertBytesEqual(t, []byte("{\n  b 1\n  a 2\n}\n"), nonCanonicalPretty)
+}
+
+func TestNonCanonicalDuplicateKeysMoveSurvivorToLastPosition(t *testing.T) {
+	jsonBody, err := ToJSON([]byte("{a 1 b 2 a 3}"), IsCanonical(false))
+	if err != nil {
+		t.Fatalf("ToJSON non-canonical duplicates: %v", err)
+	}
+	assertBytesEqual(t, []byte(`{"b":2,"a":3}`), jsonBody)
+
+	ronBody, err := FromJSON([]byte(`{"a":1,"b":2,"a":3}`), IsPretty(false), IsCanonical(false))
+	if err != nil {
+		t.Fatalf("FromJSON non-canonical duplicates: %v", err)
+	}
+	assertBytesEqual(t, []byte("b 2 a 3"), ronBody)
 }

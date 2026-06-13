@@ -22,25 +22,14 @@
     in
     {
       checks = forAllSystems (pkgs: {
-        default = pkgs.stdenvNoCC.mkDerivation {
+        default = pkgs.buildGo126Module {
           pname = "ron-go-tests";
           version = "0";
           src = self;
-          nativeBuildInputs = [ pkgs.go_1_25 ];
+          vendorHash = "sha256-1E37JfeKMspEBbJOtp7zDyIqoxF2Sd3y9imhtYRKfjw=";
 
-          buildPhase = ''
-            runHook preBuild
-            export HOME=$TMPDIR
-            export GOCACHE=$TMPDIR/go-cache
+          preCheck = ''
             ln -s ${ron}/testdata testdata
-            go test -count=1 ./...
-            runHook postBuild
-          '';
-
-          installPhase = ''
-            runHook preInstall
-            touch $out
-            runHook postInstall
           '';
         };
       });
@@ -48,7 +37,7 @@
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
           packages = [
-            pkgs.go_1_25
+            pkgs.go_1_26
             pkgs.gopls
           ];
 
