@@ -68,6 +68,39 @@ println(string(ronBody))
 buf.Reset()
 ```
 
+Pretty JSON-to-RON renders root object members directly and can map JSON values to tagged RON values:
+
+```go
+ronBody, err := ron.FromJSON(
+    []byte(`{"tx":48830,"committed":"2026-06-13T00:00:00Z"}`),
+    ron.IsCanonical(false),
+    ron.MapJSONValues(func(path []ron.JSONPathSegment, value any) (any, bool) {
+        if len(path) != 1 || path[0].IsIndex {
+            return nil, false
+        }
+        switch path[0].Key {
+        case "tx":
+            return ron.Tagged("", "BE"), true
+        case "committed":
+            return ron.Tagged("time", value), true
+        default:
+            return nil, false
+        }
+    }),
+)
+if err != nil {
+    panic(err)
+}
+fmt.Print(string(ronBody))
+```
+
+Output:
+
+```ron
+tx {# BE}
+committed {#time 2026-06-13T00:00:00Z}
+```
+
 ## Conformance
 
 Conformance tests use the reference corpus from `github.com/starfederation/ron` through `flake.nix`.

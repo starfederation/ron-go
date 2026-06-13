@@ -7,7 +7,12 @@ import (
 )
 
 // Option configures RON and JSON conversion.
-type Option func(*formatOptions)
+type Option func(*optionState)
+
+type optionState struct {
+	formatOptions
+	jsonValueMapper jsonValueMapper
+}
 
 type formatOptions struct {
 	prefix      string
@@ -16,9 +21,25 @@ type formatOptions struct {
 	isCanonical bool
 }
 
+// JSONPathSegment identifies one object key or array index in a decoded JSON value.
+type JSONPathSegment struct {
+	Key     string
+	Index   int
+	IsIndex bool
+}
+
+type jsonValueMapper func(path []JSONPathSegment, value any) (any, bool)
+
+// Tagged returns a single-member object that renders as a tagged RON form. An empty tag renders as #.
+func Tagged(tag string, value any) map[string]any {
+	return map[string]any{
+		"#" + tag: value,
+	}
+}
+
 // PrettyJSON enables indented JSON output.
 func PrettyJSON(prefix, indent string) Option {
-	return func(opts *formatOptions) {
+	return func(opts *optionState) {
 		opts.isPretty = true
 		opts.prefix = prefix
 		opts.indent = indent
@@ -27,7 +48,7 @@ func PrettyJSON(prefix, indent string) Option {
 
 // IsPretty selects multiline pretty output when true or compact output when false.
 func IsPretty(pretty bool) Option {
-	return func(opts *formatOptions) {
+	return func(opts *optionState) {
 		opts.isPretty = pretty
 	}
 }
@@ -35,8 +56,15 @@ func IsPretty(pretty bool) Option {
 // IsCanonical selects RFC 8785 UTF-16 object key ordering when true.
 // When false, source object order is preserved when available; unordered Go maps use canonical order.
 func IsCanonical(canonical bool) Option {
-	return func(opts *formatOptions) {
+	return func(opts *optionState) {
 		opts.isCanonical = canonical
+	}
+}
+
+// MapJSONValues transforms decoded JSON values before JSON-to-RON rendering.
+func MapJSONValues(mapper func(path []JSONPathSegment, value any) (any, bool)) Option {
+	return func(opts *optionState) {
+		opts.jsonValueMapper = mapper
 	}
 }
 
@@ -52,7 +80,9 @@ func ToJSONInto(dst *bytes.Buffer, src []byte, options ...Option) ([]byte, error
 		return ToJSON(src, options...)
 	}
 
-	opts := formatOptions{isCanonical: true}
+	opts := optionState{
+		formatOptions: formatOptions{isCanonical: true},
+	}
 	for _, option := range options {
 		option(&opts)
 	}
@@ -110,7 +140,7 @@ func ToJSONInto(dst *bytes.Buffer, src []byte, options ...Option) ([]byte, error
 
 // Indent sets the pretty RON indentation string.
 func Indent(indent string) Option {
-	return func(opts *formatOptions) {
+	return func(opts *optionState) {
 		if indent == "" {
 			opts.indent = "  "
 			return
@@ -131,10 +161,12 @@ func FromJSONInto(dst *bytes.Buffer, src []byte, options ...Option) ([]byte, err
 		return FromJSON(src, options...)
 	}
 
-	opts := formatOptions{
-		indent:      "  ",
-		isPretty:    true,
-		isCanonical: true,
+	opts := optionState{
+		formatOptions: formatOptions{
+			indent:      "  ",
+			isPretty:    true,
+			isCanonical: true,
+		},
 	}
 	for _, option := range options {
 		option(&opts)
@@ -142,12 +174,17 @@ func FromJSONInto(dst *bytes.Buffer, src []byte, options ...Option) ([]byte, err
 	if opts.isPretty && opts.indent == "" {
 		opts.indent = "  "
 	}
-	value, err := decodeJSON(src)
+	value, err := decodeJSON(src, opts.jsonValueMapper)
 	if err != nil {
 		return nil, err
 	}
 	if opts.isPretty {
 		dst.Grow(len(src) * 2)
+		if object, ok := value.(orderedObject); ok && len(object.Members) > 0 {
+			writeObjectMembers(dst, objectMembers(object, opts.isCanonical), opts.indent, -1, opts.isCanonical)
+			dst.WriteByte('\n')
+			return dst.Bytes(), nil
+		}
 		writeValue(dst, value, opts.indent, 0, opts.isCanonical)
 		dst.WriteByte('\n')
 		return dst.Bytes(), nil
@@ -177,11 +214,11 @@ func MarshalCompact(value any) ([]byte, error) {
 	return FromJSONCompact(body)
 }
 
-func decodeJSON(src []byte) (any, error) {
+func decodeJSON(src []byte, mapper jsonValueMapper) (any, error) {
 	dec := json.NewDecoder(bytes.NewReader(src))
 	dec.UseNumber()
 
-	value, err := decodeJSONValue(dec)
+	value, err := decodeJSONValue(dec, nil, mapper)
 	if err != nil {
 		return nil, err
 	}
@@ -194,7 +231,7 @@ func decodeJSON(src []byte) (any, error) {
 	return value, nil
 }
 
-func decodeJSONValue(dec *json.Decoder) (any, error) {
+func decodeJSONValue(dec *json.Decoder, path []JSONPathSegment, mapper jsonValueMapper) (any, error) {
 	token, err := dec.Token()
 	if err != nil {
 		return nil, err
@@ -202,9 +239,9 @@ func decodeJSONValue(dec *json.Decoder) (any, error) {
 
 	switch token := token.(type) {
 	case nil, bool, string, json.Number:
-		return token, nil
+		return mapJSONValue(path, token, mapper), nil
 	case float64:
-		return token, nil
+		return mapJSONValue(path, token, mapper), nil
 	case json.Delim:
 		switch token {
 		case '{':
@@ -219,7 +256,7 @@ func decodeJSONValue(dec *json.Decoder) (any, error) {
 					return nil, newError("expected JSON object key")
 				}
 
-				value, err := decodeJSONValue(dec)
+				value, err := decodeJSONValue(dec, append(path, JSONPathSegment{Key: key}), mapper)
 				if err != nil {
 					return nil, err
 				}
@@ -233,11 +270,11 @@ func decodeJSONValue(dec *json.Decoder) (any, error) {
 			if end != json.Delim('}') {
 				return nil, newError("expected JSON object end")
 			}
-			return object, nil
+			return mapJSONValue(path, object, mapper), nil
 		case '[':
 			array := make([]any, 0, 4)
 			for dec.More() {
-				value, err := decodeJSONValue(dec)
+				value, err := decodeJSONValue(dec, append(path, JSONPathSegment{Index: len(array), IsIndex: true}), mapper)
 				if err != nil {
 					return nil, err
 				}
@@ -251,8 +288,19 @@ func decodeJSONValue(dec *json.Decoder) (any, error) {
 			if end != json.Delim(']') {
 				return nil, newError("expected JSON array end")
 			}
-			return array, nil
+			return mapJSONValue(path, array, mapper), nil
 		}
 	}
 	return nil, newError("unexpected JSON token")
+}
+
+func mapJSONValue(path []JSONPathSegment, value any, mapper jsonValueMapper) any {
+	if mapper == nil {
+		return value
+	}
+	mapped, ok := mapper(append([]JSONPathSegment(nil), path...), value)
+	if !ok {
+		return value
+	}
+	return mapped
 }
