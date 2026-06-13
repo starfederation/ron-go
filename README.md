@@ -49,24 +49,23 @@ func main() {
 }
 ```
 
-For repeated conversions, reuse builders:
+For repeated conversions, reuse a `bytes.Buffer`:
 
 ```go
-var jsonBuilder ron.JSONBuilder
-jsonBody, err := ron.ToJSONInto(&jsonBuilder, ronBody)
+var buf bytes.Buffer
+jsonBody, err := ron.ToJSONInto(&buf, ronBody)
 if err != nil {
     panic(err)
 }
 println(string(jsonBody))
-jsonBuilder.Reset()
+buf.Reset()
 
-var ronBuilder ron.RONBuilder
-ronBody, err = ron.FromJSONCompactInto(&ronBuilder, jsonBody)
+ronBody, err = ron.FromJSONCompactInto(&buf, jsonBody)
 if err != nil {
     panic(err)
 }
 println(string(ronBody))
-ronBuilder.Reset()
+buf.Reset()
 ```
 
 ## Conformance
@@ -86,12 +85,12 @@ nix develop
 go test ./...
 ```
 
-Without Nix, set `RON_TESTDATA_DIR=/path/to/ron/testdata` or provide a local `testdata/conformance` directory. Otherwise conformance tests are skipped.
+Without Nix, set `RON_TESTDATA_DIR=/path/to/ron/testdata` or provide local `testdata/conformance` and `testdata/rfc8785` directories. Otherwise testdata-backed tests are skipped.
 
 To update to the latest reference corpus:
 
 ```sh
-nix flake lock --update-input ron
+nix flake update ron
 nix flake check
 ```
 

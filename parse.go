@@ -30,14 +30,6 @@ type parser struct {
 
 type ronNumber string
 
-var asciiSpace = [utf8.RuneSelf]bool{
-	' ':  true,
-	'\t': true,
-	'\n': true,
-	'\r': true,
-	',':  true,
-}
-
 var asciiDelimiter = [utf8.RuneSelf]bool{
 	'{':  true,
 	'}':  true,
@@ -57,8 +49,36 @@ func parse(src []byte) (any, error) {
 	p.skipSpace()
 	if p.pos < len(p.src) && p.src[p.pos] != '{' && p.src[p.pos] != '[' {
 		p.pos = 0
-		if value, err := p.parseTopLevelObject(); err == nil {
-			return value, nil
+		p.skipSpace()
+		key, err := p.parseKeyCurrent()
+		if err == nil {
+			value, err := p.parseValue()
+			if err == nil {
+				object := map[string]any{
+					key: value,
+				}
+				ok := true
+				p.skipSpace()
+				for p.pos < len(p.src) {
+					key, err := p.parseKeyCurrent()
+					if err != nil {
+						ok = false
+						break
+					}
+
+					value, err := p.parseValue()
+					if err != nil {
+						ok = false
+						break
+					}
+
+					object[key] = value
+					p.skipSpace()
+				}
+				if ok {
+					return object, nil
+				}
+			}
 		}
 	}
 
@@ -75,47 +95,6 @@ func parse(src []byte) (any, error) {
 	return value, nil
 }
 
-func (p *parser) parseTopLevelObject() (any, error) {
-	p.skipSpace()
-	if p.pos == len(p.src) {
-		return nil, p.errorf("expected value")
-	}
-	switch p.src[p.pos] {
-	case '{', '[':
-		return nil, p.errorf("top-level object elision not applicable")
-	}
-
-	key, err := p.parseKeyCurrent()
-	if err != nil {
-		return nil, err
-	}
-
-	value, err := p.parseValue()
-	if err != nil {
-		return nil, err
-	}
-
-	object := map[string]any{
-		key: value,
-	}
-	p.skipSpace()
-	for p.pos < len(p.src) {
-		key, err := p.parseKeyCurrent()
-		if err != nil {
-			return nil, err
-		}
-
-		value, err := p.parseValue()
-		if err != nil {
-			return nil, err
-		}
-
-		object[key] = value
-		p.skipSpace()
-	}
-	return object, nil
-}
-
 func (p *parser) parseValue() (any, error) {
 	p.skipSpace()
 	return p.parseValueCurrent()
@@ -127,9 +106,53 @@ func (p *parser) parseValueCurrent() (any, error) {
 	}
 	switch p.src[p.pos] {
 	case '{':
-		return p.parseObject()
+		p.pos++
+		object := make(map[string]any, 4)
+		for {
+			p.skipWhitespace()
+			if p.pos == len(p.src) {
+				return nil, p.errorf("expected }")
+			}
+			if p.src[p.pos] == '}' {
+				p.pos++
+				return object, nil
+			}
+
+			key, err := p.parseKeyCurrent()
+			if err != nil {
+				return nil, err
+			}
+
+			p.skipWhitespace()
+			value, err := p.parseValueCurrent()
+			if err != nil {
+				return nil, err
+			}
+
+			object[key] = value
+			p.skipSeparators()
+		}
 	case '[':
-		return p.parseArray()
+		p.pos++
+		array := make([]any, 0, 4)
+		for {
+			p.skipWhitespace()
+			if p.pos == len(p.src) {
+				return nil, p.errorf("expected ]")
+			}
+			if p.src[p.pos] == ']' {
+				p.pos++
+				return array, nil
+			}
+
+			value, err := p.parseValueCurrent()
+			if err != nil {
+				return nil, err
+			}
+
+			array = append(array, value)
+			p.skipSeparators()
+		}
 	case ',':
 		return p.parseCommaPrefixedToken(), nil
 	case '\'':
@@ -158,128 +181,6 @@ func (p *parser) parseValueCurrent() (any, error) {
 	return bytesToString(token), nil
 }
 
-func (p *parser) scanValue() error {
-	p.skipSpace()
-	return p.scanValueCurrent()
-}
-
-func (p *parser) scanValueCurrent() error {
-	if p.pos == len(p.src) {
-		return p.errorf("expected value")
-	}
-	switch p.src[p.pos] {
-	case '{':
-		return p.scanObject()
-	case '[':
-		return p.scanArray()
-	case ',':
-		p.parseCommaPrefixedToken()
-		return nil
-	case '\'':
-		return p.scanApostropheValue()
-	case '"':
-		return p.scanQuoted()
-	}
-	return p.scanToken()
-}
-
-func (p *parser) parseObject() (any, error) {
-	p.pos++
-	object := make(map[string]any, 4)
-	for {
-		p.skipWhitespace()
-		if p.pos == len(p.src) {
-			return nil, p.errorf("expected }")
-		}
-		if p.src[p.pos] == '}' {
-			p.pos++
-			return object, nil
-		}
-
-		key, err := p.parseKeyCurrent()
-		if err != nil {
-			return nil, err
-		}
-
-		p.skipWhitespace()
-		value, err := p.parseValueCurrent()
-		if err != nil {
-			return nil, err
-		}
-
-		object[key] = value
-		p.skipSeparators()
-	}
-}
-
-func (p *parser) scanObject() error {
-	p.pos++
-	for {
-		p.skipWhitespace()
-		if p.pos == len(p.src) {
-			return p.errorf("expected }")
-		}
-		if p.src[p.pos] == '}' {
-			p.pos++
-			return nil
-		}
-		if _, err := p.parseKeyCurrent(); err != nil {
-			return err
-		}
-		p.skipWhitespace()
-		if err := p.scanValueCurrent(); err != nil {
-			return err
-		}
-		p.skipSeparators()
-	}
-}
-
-func (p *parser) parseArray() (any, error) {
-	p.pos++
-	array := make([]any, 0, 4)
-	for {
-		p.skipWhitespace()
-		if p.pos == len(p.src) {
-			return nil, p.errorf("expected ]")
-		}
-		if p.src[p.pos] == ']' {
-			p.pos++
-			return array, nil
-		}
-
-		value, err := p.parseValueCurrent()
-		if err != nil {
-			return nil, err
-		}
-
-		array = append(array, value)
-		p.skipSeparators()
-	}
-}
-
-func (p *parser) scanArray() error {
-	p.pos++
-	for {
-		p.skipWhitespace()
-		if p.pos == len(p.src) {
-			return p.errorf("expected ]")
-		}
-		if p.src[p.pos] == ']' {
-			p.pos++
-			return nil
-		}
-		if err := p.scanValueCurrent(); err != nil {
-			return err
-		}
-		p.skipSeparators()
-	}
-}
-
-func (p *parser) parseKey() (string, error) {
-	p.skipSpace()
-	return p.parseKeyCurrent()
-}
-
 func (p *parser) parseKeyCurrent() (string, error) {
 	if p.pos == len(p.src) {
 		return "", p.errorf("expected object key")
@@ -303,7 +204,22 @@ func (p *parser) parseKeyCurrent() (string, error) {
 }
 
 func (p *parser) parseApostropheValue() (string, error) {
-	if p.apostropheIsToken() {
+	apostropheIsToken := false
+	if p.pos+1 == len(p.src) {
+		apostropheIsToken = true
+	} else if p.src[p.pos+1] == ' ' || p.src[p.pos+1] == '\t' || p.src[p.pos+1] == '\n' || p.src[p.pos+1] == '\r' {
+		apostropheIsToken = true
+		for pos := p.pos + 2; pos < len(p.src); pos++ {
+			switch p.src[pos] {
+			case '\'':
+				apostropheIsToken = false
+				pos = len(p.src)
+			case '{', '}', '[', ']':
+				pos = len(p.src)
+			}
+		}
+	}
+	if apostropheIsToken {
 		p.pos++
 		return "'", nil
 	}
@@ -321,44 +237,7 @@ func (p *parser) parseApostropheValue() (string, error) {
 	return "", err
 }
 
-func (p *parser) scanApostropheValue() error {
-	if p.apostropheIsToken() {
-		p.pos++
-		return nil
-	}
-
-	start := p.pos
-	if err := p.scanQuoted(); err == nil {
-		return nil
-	}
-	p.pos = start
-	if p.pos+1 == len(p.src) || isDelimiter(p.src[p.pos+1]) {
-		p.pos++
-		return nil
-	}
-	return p.scanQuoted()
-}
-
-func (p *parser) apostropheIsToken() bool {
-	if p.pos+1 == len(p.src) {
-		return true
-	}
-	switch p.src[p.pos+1] {
-	case ' ', '\t', '\n', '\r':
-		for pos := p.pos + 2; pos < len(p.src); pos++ {
-			switch p.src[pos] {
-			case '\'':
-				return false
-			case '{', '}', '[', ']':
-				return true
-			}
-		}
-		return true
-	}
-	return false
-}
-
-func (p *parser) parseQuotedBytes() ([]byte, error) {
+func (p *parser) parseQuotedString() (string, error) {
 	quote := p.src[p.pos]
 	count := 0
 	for p.pos+count < len(p.src) && p.src[p.pos+count] == quote {
@@ -367,11 +246,11 @@ func (p *parser) parseQuotedBytes() ([]byte, error) {
 	if p.pos+count == len(p.src) || isDelimiter(p.src[p.pos+count]) {
 		if count%2 == 0 {
 			p.pos += count
-			return nil, nil
+			return "", nil
 		}
 		if count >= 5 && (count-2)%3 == 0 {
 			p.pos += count
-			return bytes.Repeat([]byte{quote}, (count-2)/3), nil
+			return bytesToString(bytes.Repeat([]byte{quote}, (count-2)/3)), nil
 		}
 	}
 
@@ -379,13 +258,13 @@ func (p *parser) parseQuotedBytes() ([]byte, error) {
 	start := p.pos
 	for {
 		if p.pos == len(p.src) {
-			return nil, p.errorf("unterminated string")
+			return "", p.errorf("unterminated string")
 		}
 
 		next := bytes.IndexByte(p.src[p.pos:], quote)
 		if next < 0 {
 			p.pos = len(p.src)
-			return nil, p.errorf("unterminated string")
+			return "", p.errorf("unterminated string")
 		}
 
 		p.pos += next
@@ -396,54 +275,7 @@ func (p *parser) parseQuotedBytes() ([]byte, error) {
 		if run >= count {
 			value := p.src[start:p.pos]
 			p.pos += count
-			return value, nil
-		}
-
-		p.pos += run
-	}
-}
-
-func (p *parser) parseQuotedString() (string, error) {
-	value, err := p.parseQuotedBytes()
-	if err != nil {
-		return "", err
-	}
-	return bytesToString(value), nil
-}
-
-func (p *parser) scanQuoted() error {
-	quote := p.src[p.pos]
-	count := 0
-	for p.pos+count < len(p.src) && p.src[p.pos+count] == quote {
-		count++
-	}
-	if p.pos+count == len(p.src) || isDelimiter(p.src[p.pos+count]) {
-		if count%2 == 0 || (count >= 5 && (count-2)%3 == 0) {
-			p.pos += count
-			return nil
-		}
-	}
-
-	p.pos += count
-	for {
-		if p.pos == len(p.src) {
-			return p.errorf("unterminated string")
-		}
-
-		next := bytes.IndexByte(p.src[p.pos:], quote)
-		if next < 0 {
-			p.pos = len(p.src)
-			return p.errorf("unterminated string")
-		}
-
-		p.pos += next
-		run := 0
-		for p.pos+run < len(p.src) && p.src[p.pos+run] == quote {
-			run++
-		}
-		if run >= count {
-			p.pos += count
-			return nil
+			return bytesToString(value), nil
 		}
 
 		p.pos += run
@@ -457,14 +289,6 @@ func (p *parser) parseCommaPrefixedToken() string {
 		p.pos++
 	}
 	return bytesToString(p.src[start:p.pos])
-}
-
-func (p *parser) parseToken() (string, error) {
-	start, end, err := p.parseTokenSpan()
-	if err != nil {
-		return "", err
-	}
-	return bytesToString(p.src[start:end]), nil
 }
 
 func (p *parser) parseTokenSpan() (int, int, error) {
@@ -481,31 +305,19 @@ func (p *parser) parseTokenSpan() (int, int, error) {
 	return start, p.pos, nil
 }
 
-func (p *parser) scanToken() error {
-	start := p.pos
-	for p.pos < len(p.src) {
-		if b := p.src[p.pos]; b < utf8.RuneSelf && asciiDelimiter[b] {
-			break
-		}
-		p.pos++
-	}
-	if start == p.pos {
-		return p.errorf("expected token")
-	}
-	return nil
-}
-
 func (p *parser) skipSpace() {
 	pos := p.pos
 	src := p.src
 	for pos < len(src) {
 		if b := src[pos]; b < utf8.RuneSelf {
-			if asciiSpace[b] {
+			switch b {
+			case ' ', '\t', '\n', '\r', ',':
 				pos++
 				continue
+			default:
+				p.pos = pos
+				return
 			}
-			p.pos = pos
-			return
 		}
 		r, size := utf8.DecodeRune(src[pos:])
 		if !unicode.IsSpace(r) {
@@ -567,10 +379,6 @@ func bytesToString(value []byte) string {
 		return ""
 	}
 	return unsafe.String(unsafe.SliceData(value), len(value))
-}
-
-func looksLikeNumber(token string) bool {
-	return looksLikeNumberBytes([]byte(token))
 }
 
 func looksLikeNumberBytes(token []byte) bool {

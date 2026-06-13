@@ -1,6 +1,7 @@
 package ron
 
 import (
+	"bytes"
 	"strconv"
 	"strings"
 	"testing"
@@ -12,9 +13,75 @@ var (
 )
 
 var (
-	benchmarkRON   = []byte(makeBenchmarkRON(256))
-	benchmarkJSON  = []byte(makeBenchmarkJSON(256))
-	benchmarkValue = mustParseBenchmarkRON(benchmarkRON)
+	benchmarkRON = []byte(func() string {
+		const records = 256
+
+		var b strings.Builder
+		b.Grow(records*96 + 128)
+		b.WriteString("meta {count ")
+		b.WriteString(strconv.Itoa(records))
+		b.WriteString(" label benchmark active true} people [")
+		for i := range records {
+			if i > 0 {
+				b.WriteByte(' ')
+			}
+			b.WriteString("{active ")
+			if i%3 == 0 {
+				b.WriteString("true")
+			} else {
+				b.WriteString("false")
+			}
+			b.WriteString(" id ")
+			b.WriteString(strconv.Itoa(i))
+			b.WriteString(" name person_")
+			b.WriteString(strconv.Itoa(i))
+			b.WriteString(" score ")
+			b.WriteString(strconv.FormatFloat(float64(i)*1.25, 'f', 2, 64))
+			b.WriteString(" tags [alpha beta group_")
+			b.WriteString(strconv.Itoa(i % 10))
+			b.WriteString("]}")
+		}
+		b.WriteByte(']')
+		return b.String()
+	}())
+	benchmarkJSON = []byte(func() string {
+		const records = 256
+
+		var b strings.Builder
+		b.Grow(records*112 + 128)
+		b.WriteString(`{"meta":{"active":true,"count":`)
+		b.WriteString(strconv.Itoa(records))
+		b.WriteString(`,"label":"benchmark"},"people":[`)
+		for i := range records {
+			if i > 0 {
+				b.WriteByte(',')
+			}
+			b.WriteString(`{"active":`)
+			if i%3 == 0 {
+				b.WriteString("true")
+			} else {
+				b.WriteString("false")
+			}
+			b.WriteString(`,"id":`)
+			b.WriteString(strconv.Itoa(i))
+			b.WriteString(`,"name":"person_`)
+			b.WriteString(strconv.Itoa(i))
+			b.WriteString(`","score":`)
+			b.WriteString(strconv.FormatFloat(float64(i)*1.25, 'f', 2, 64))
+			b.WriteString(`,"tags":["alpha","beta","group_`)
+			b.WriteString(strconv.Itoa(i % 10))
+			b.WriteString(`"]}`)
+		}
+		b.WriteString(`]}`)
+		return b.String()
+	}())
+	benchmarkValue = func() any {
+		value, err := parse(benchmarkRON)
+		if err != nil {
+			panic(err)
+		}
+		return value
+	}()
 )
 
 func BenchmarkToJSON(b *testing.B) {
@@ -29,13 +96,13 @@ func BenchmarkToJSON(b *testing.B) {
 	}
 }
 
-func BenchmarkToJSONBuilder(b *testing.B) {
-	var builder JSONBuilder
+func BenchmarkToJSONBuffer(b *testing.B) {
+	var buf bytes.Buffer
 	b.ReportAllocs()
 	b.SetBytes(int64(len(benchmarkRON)))
 	for b.Loop() {
-		builder.Reset()
-		result, err := ToJSONInto(&builder, benchmarkRON)
+		buf.Reset()
+		result, err := ToJSONInto(&buf, benchmarkRON)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -67,13 +134,13 @@ func BenchmarkFromJSONCompact(b *testing.B) {
 	}
 }
 
-func BenchmarkFromJSONCompactBuilder(b *testing.B) {
-	var builder RONBuilder
+func BenchmarkFromJSONCompactBuffer(b *testing.B) {
+	var buf bytes.Buffer
 	b.ReportAllocs()
 	b.SetBytes(int64(len(benchmarkJSON)))
 	for b.Loop() {
-		builder.Reset()
-		result, err := FromJSONCompactInto(&builder, benchmarkJSON)
+		buf.Reset()
+		result, err := FromJSONCompactInto(&buf, benchmarkJSON)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -93,13 +160,13 @@ func BenchmarkFromJSONPretty(b *testing.B) {
 	}
 }
 
-func BenchmarkFromJSONPrettyBuilder(b *testing.B) {
-	var builder RONBuilder
+func BenchmarkFromJSONPrettyBuffer(b *testing.B) {
+	var buf bytes.Buffer
 	b.ReportAllocs()
 	b.SetBytes(int64(len(benchmarkJSON)))
 	for b.Loop() {
-		builder.Reset()
-		result, err := FromJSONInto(&builder, benchmarkJSON)
+		buf.Reset()
+		result, err := FromJSONInto(&buf, benchmarkJSON)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -123,7 +190,10 @@ func BenchmarkRenderRONCompact(b *testing.B) {
 	b.ReportAllocs()
 	b.SetBytes(int64(len(benchmarkRON)))
 	for b.Loop() {
-		benchmarkResult = renderCompactCap(benchmarkValue, len(benchmarkRON))
+		var buf bytes.Buffer
+		buf.Grow(len(benchmarkRON))
+		writeCompactValue(&buf, benchmarkValue, true, true)
+		benchmarkResult = buf.Bytes()
 	}
 }
 
@@ -131,74 +201,10 @@ func BenchmarkRenderRONPretty(b *testing.B) {
 	b.ReportAllocs()
 	b.SetBytes(int64(len(benchmarkRON)))
 	for b.Loop() {
-		benchmarkResult = renderCap(benchmarkValue, "  ", len(benchmarkRON)*2)
+		var buf bytes.Buffer
+		buf.Grow(len(benchmarkRON) * 2)
+		writeValue(&buf, benchmarkValue, "  ", 0, true)
+		buf.WriteByte('\n')
+		benchmarkResult = buf.Bytes()
 	}
-}
-
-func mustParseBenchmarkRON(src []byte) any {
-	value, err := parse(src)
-	if err != nil {
-		panic(err)
-	}
-	return value
-}
-
-func makeBenchmarkRON(records int) string {
-	var b strings.Builder
-	b.Grow(records*96 + 128)
-	b.WriteString("meta {count ")
-	b.WriteString(strconv.Itoa(records))
-	b.WriteString(" label benchmark active true} people [")
-	for i := range records {
-		if i > 0 {
-			b.WriteByte(' ')
-		}
-		b.WriteString("{active ")
-		if i%3 == 0 {
-			b.WriteString("true")
-		} else {
-			b.WriteString("false")
-		}
-		b.WriteString(" id ")
-		b.WriteString(strconv.Itoa(i))
-		b.WriteString(" name person_")
-		b.WriteString(strconv.Itoa(i))
-		b.WriteString(" score ")
-		b.WriteString(strconv.FormatFloat(float64(i)*1.25, 'f', 2, 64))
-		b.WriteString(" tags [alpha beta group_")
-		b.WriteString(strconv.Itoa(i % 10))
-		b.WriteString("]}")
-	}
-	b.WriteByte(']')
-	return b.String()
-}
-
-func makeBenchmarkJSON(records int) string {
-	var b strings.Builder
-	b.Grow(records*112 + 128)
-	b.WriteString(`{"meta":{"active":true,"count":`)
-	b.WriteString(strconv.Itoa(records))
-	b.WriteString(`,"label":"benchmark"},"people":[`)
-	for i := range records {
-		if i > 0 {
-			b.WriteByte(',')
-		}
-		b.WriteString(`{"active":`)
-		if i%3 == 0 {
-			b.WriteString("true")
-		} else {
-			b.WriteString("false")
-		}
-		b.WriteString(`,"id":`)
-		b.WriteString(strconv.Itoa(i))
-		b.WriteString(`,"name":"person_`)
-		b.WriteString(strconv.Itoa(i))
-		b.WriteString(`","score":`)
-		b.WriteString(strconv.FormatFloat(float64(i)*1.25, 'f', 2, 64))
-		b.WriteString(`,"tags":["alpha","beta","group_`)
-		b.WriteString(strconv.Itoa(i % 10))
-		b.WriteString(`"]}`)
-	}
-	b.WriteString(`]}`)
-	return b.String()
 }

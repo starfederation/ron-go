@@ -1,6 +1,7 @@
 package ron
 
 import (
+	"bytes"
 	"sort"
 	"unicode/utf8"
 )
@@ -18,71 +19,22 @@ func (s jsonMemberSorter) Len() int {
 }
 
 func (s jsonMemberSorter) Less(i, j int) bool {
-	return s[i].Key < s[j].Key
+	return rfc8785StringLess(s[i].Key, s[j].Key)
 }
 
 func (s jsonMemberSorter) Swap(i, j int) {
 	s[i], s[j] = s[j], s[i]
 }
 
-func writeRONJSONInto(buf *jsonBytes, src []byte, prefix, indent string, canonical bool) error {
-	p := parser{src: src}
-	p.skipSpace()
-	if p.pos < len(p.src) && p.src[p.pos] != '{' && p.src[p.pos] != '[' {
-		start := p.pos
-		bufStart := len(*buf)
-		if err := p.writeTopLevelJSONObject(buf, prefix, indent, canonical); err == nil {
-			return nil
-		}
-		*buf = (*buf)[:bufStart]
-		p.pos = start
-	}
-
-	if err := p.writeJSONValue(buf, prefix, indent, 0, canonical); err != nil {
-		return err
-	}
-	p.skipSpace()
-	if p.pos != len(p.src) {
-		return p.errorf("unexpected trailing data")
-	}
-	return nil
-}
-
-func (p *parser) writeTopLevelJSONObject(buf *jsonBytes, prefix, indent string, canonical bool) error {
-	members := jsonMembers{Values: make([]jsonMember, 0, 4)}
-	var values jsonBytes
-	for {
-		p.skipSpace()
-		if p.pos == len(p.src) {
-			return p.writeJSONObjectMembers(buf, members.Values, values, prefix, indent, 0, canonical)
-		}
-		if p.src[p.pos] == '{' || p.src[p.pos] == '[' {
-			return p.errorf("top-level object elision not applicable")
-		}
-
-		key, err := p.parseKeyCurrent()
-		if err != nil {
-			return err
-		}
-
-		valueStart := len(values)
-		if err := p.writeJSONValue(&values, prefix, indent, 1, canonical); err != nil {
-			return err
-		}
-		members.Set(key, valueStart, len(values))
-	}
-}
-
-func (p *parser) writeJSONValue(buf *jsonBytes, prefix, indent string, depth int, canonical bool) error {
+func (p *parser) writeJSONValue(buf *bytes.Buffer, prefix, indent string, depth int, canonical bool) error {
 	p.skipSpace()
 	return p.writeJSONValueCurrent(buf, prefix, indent, depth, canonical)
 }
 
-func writeJSONQuoted(buf *jsonBytes, value string) {
+func writeJSONQuoted(buf *bytes.Buffer, value string) {
 	const hex = "0123456789abcdef"
 
-	dst := *buf
-	dst = append(dst, '"')
+	buf.WriteByte('"')
 	start := 0
 	for i := 0; i < len(value); {
 		b := value[i]
@@ -92,22 +44,25 @@ func writeJSONQuoted(buf *jsonBytes, value string) {
 				continue
 			}
 
-			dst = append(dst, value[start:i]...)
+			buf.WriteString(value[start:i])
 			switch b {
 			case '\\', '"':
-				dst = append(dst, '\\', b)
+				buf.WriteByte('\\')
+				buf.WriteByte(b)
 			case '\b':
-				dst = append(dst, '\\', 'b')
+				buf.WriteString("\\b")
 			case '\f':
-				dst = append(dst, '\\', 'f')
+				buf.WriteString("\\f")
 			case '\n':
-				dst = append(dst, '\\', 'n')
+				buf.WriteString("\\n")
 			case '\r':
-				dst = append(dst, '\\', 'r')
+				buf.WriteString("\\r")
 			case '\t':
-				dst = append(dst, '\\', 't')
+				buf.WriteString("\\t")
 			default:
-				dst = append(dst, '\\', 'u', '0', '0', hex[b>>4], hex[b&0xf])
+				buf.WriteString("\\u00")
+				buf.WriteByte(hex[b>>4])
+				buf.WriteByte(hex[b&0xf])
 			}
 			i++
 			start = i
@@ -116,28 +71,104 @@ func writeJSONQuoted(buf *jsonBytes, value string) {
 
 		r, size := utf8.DecodeRuneInString(value[i:])
 		if r == utf8.RuneError && size == 1 {
-			dst = append(dst, value[start:i]...)
-			dst = append(dst, '\\', 'u', 'f', 'f', 'f', 'd')
+			buf.WriteString(value[start:i])
+			buf.WriteString("\\ufffd")
 			i++
 			start = i
 			continue
 		}
 		i += size
 	}
-	dst = append(dst, value[start:]...)
-	dst = append(dst, '"')
-	*buf = dst
+	buf.WriteString(value[start:])
+	buf.WriteByte('"')
 }
 
-func (p *parser) writeJSONValueCurrent(buf *jsonBytes, prefix, indent string, depth int, canonical bool) error {
+func (p *parser) writeJSONValueCurrent(buf *bytes.Buffer, prefix, indent string, depth int, canonical bool) error {
 	if p.pos == len(p.src) {
 		return p.errorf("expected value")
 	}
 	switch p.src[p.pos] {
 	case '{':
-		return p.writeJSONObject(buf, prefix, indent, depth, canonical)
+		p.pos++
+		members := jsonMembers{Values: make([]jsonMember, 0, 8)}
+		var values bytes.Buffer
+		values.Grow(128)
+		for {
+			p.skipWhitespace()
+			if p.pos == len(p.src) {
+				return p.errorf("expected }")
+			}
+			if p.src[p.pos] == '}' {
+				p.pos++
+				return p.writeJSONObjectMembers(buf, members.Values, values.Bytes(), prefix, indent, depth, canonical)
+			}
+
+			key, err := p.parseKeyCurrent()
+			if err != nil {
+				return err
+			}
+
+			p.skipWhitespace()
+			valueStart := values.Len()
+			if err := p.writeJSONValueCurrent(&values, prefix, indent, depth+1, canonical); err != nil {
+				return err
+			}
+			members.Set(key, valueStart, values.Len())
+			p.skipSeparators()
+		}
 	case '[':
-		return p.writeJSONArray(buf, prefix, indent, depth, canonical)
+		p.pos++
+		p.skipWhitespace()
+		if p.pos == len(p.src) {
+			return p.errorf("expected ]")
+		}
+		if p.src[p.pos] == ']' {
+			p.pos++
+			buf.WriteString("[]")
+			return nil
+		}
+
+		buf.WriteByte('[')
+		if indent == "" {
+			for i := 0; ; i++ {
+				if i > 0 {
+					buf.WriteByte(',')
+				}
+				if err := p.writeJSONValueCurrent(buf, prefix, indent, depth+1, canonical); err != nil {
+					return err
+				}
+				p.skipSeparators()
+				if p.pos == len(p.src) {
+					return p.errorf("expected ]")
+				}
+				if p.src[p.pos] == ']' {
+					p.pos++
+					buf.WriteByte(']')
+					return nil
+				}
+			}
+		}
+
+		buf.WriteByte('\n')
+		for i := 0; ; i++ {
+			writeJSONIndent(buf, prefix, indent, depth+1)
+			if err := p.writeJSONValueCurrent(buf, prefix, indent, depth+1, canonical); err != nil {
+				return err
+			}
+			p.skipSeparators()
+			if p.pos == len(p.src) {
+				return p.errorf("expected ]")
+			}
+			if p.src[p.pos] == ']' {
+				p.pos++
+				buf.WriteByte('\n')
+				writeJSONIndent(buf, prefix, indent, depth)
+				buf.WriteByte(']')
+				return nil
+			}
+			buf.WriteByte(',')
+			buf.WriteByte('\n')
+		}
 	case ',':
 		writeJSONQuoted(buf, p.parseCommaPrefixedToken())
 		return nil
@@ -164,138 +195,54 @@ func (p *parser) writeJSONValueCurrent(buf *jsonBytes, prefix, indent string, de
 	token := p.src[start:end]
 	switch {
 	case len(token) == 4 && token[0] == 't' && token[1] == 'r' && token[2] == 'u' && token[3] == 'e':
-		writeString(buf, "true")
+		buf.WriteString("true")
 	case len(token) == 5 && token[0] == 'f' && token[1] == 'a' && token[2] == 'l' && token[3] == 's' && token[4] == 'e':
-		writeString(buf, "false")
+		buf.WriteString("false")
 	case len(token) == 4 && token[0] == 'n' && token[1] == 'u' && token[2] == 'l' && token[3] == 'l':
-		writeString(buf, "null")
+		buf.WriteString("null")
 	case looksLikeNumberBytes(token):
-		writeBytes(buf, token)
+		buf.Write(token)
 	default:
 		writeJSONQuoted(buf, bytesToString(token))
 	}
 	return nil
 }
 
-func (p *parser) writeJSONObject(buf *jsonBytes, prefix, indent string, depth int, canonical bool) error {
-	p.pos++
-	members := jsonMembers{Values: make([]jsonMember, 0, 8)}
-	values := make(jsonBytes, 0, 128)
-	for {
-		p.skipWhitespace()
-		if p.pos == len(p.src) {
-			return p.errorf("expected }")
-		}
-		if p.src[p.pos] == '}' {
-			p.pos++
-			return p.writeJSONObjectMembers(buf, members.Values, values, prefix, indent, depth, canonical)
-		}
-
-		key, err := p.parseKeyCurrent()
-		if err != nil {
-			return err
-		}
-
-		p.skipWhitespace()
-		valueStart := len(values)
-		if err := p.writeJSONValueCurrent(&values, prefix, indent, depth+1, canonical); err != nil {
-			return err
-		}
-		members.Set(key, valueStart, len(values))
-		p.skipSeparators()
-	}
-}
-
-func (p *parser) writeJSONObjectMembers(buf *jsonBytes, members []jsonMember, values []byte, prefix, indent string, depth int, canonical bool) error {
+func (p *parser) writeJSONObjectMembers(buf *bytes.Buffer, members []jsonMember, values []byte, prefix, indent string, depth int, canonical bool) error {
 	if len(members) == 0 {
-		writeString(buf, "{}")
+		buf.WriteString("{}")
 		return nil
 	}
 	if canonical {
 		sort.Sort(jsonMemberSorter(members))
 	}
-	writeByte(buf, '{')
+	buf.WriteByte('{')
 	if indent == "" {
 		for i, member := range members {
 			if i > 0 {
-				writeByte(buf, ',')
+				buf.WriteByte(',')
 			}
 			writeJSONQuoted(buf, member.Key)
-			writeByte(buf, ':')
-			writeBytes(buf, values[member.ValueStart:member.ValueEnd])
+			buf.WriteByte(':')
+			buf.Write(values[member.ValueStart:member.ValueEnd])
 		}
-		writeByte(buf, '}')
+		buf.WriteByte('}')
 		return nil
 	}
-	writeByte(buf, '\n')
+	buf.WriteByte('\n')
 	for i, member := range members {
 		writeJSONIndent(buf, prefix, indent, depth+1)
 		writeJSONQuoted(buf, member.Key)
-		writeString(buf, ": ")
-		writeBytes(buf, values[member.ValueStart:member.ValueEnd])
+		buf.WriteString(": ")
+		buf.Write(values[member.ValueStart:member.ValueEnd])
 		if i+1 < len(members) {
-			writeByte(buf, ',')
+			buf.WriteByte(',')
 		}
-		writeByte(buf, '\n')
+		buf.WriteByte('\n')
 	}
 	writeJSONIndent(buf, prefix, indent, depth)
-	writeByte(buf, '}')
+	buf.WriteByte('}')
 	return nil
-}
-
-func (p *parser) writeJSONArray(buf *jsonBytes, prefix, indent string, depth int, canonical bool) error {
-	p.pos++
-	p.skipWhitespace()
-	if p.pos == len(p.src) {
-		return p.errorf("expected ]")
-	}
-	if p.src[p.pos] == ']' {
-		p.pos++
-		writeString(buf, "[]")
-		return nil
-	}
-
-	writeByte(buf, '[')
-	if indent == "" {
-		for i := 0; ; i++ {
-			if i > 0 {
-				writeByte(buf, ',')
-			}
-			if err := p.writeJSONValueCurrent(buf, prefix, indent, depth+1, canonical); err != nil {
-				return err
-			}
-			p.skipSeparators()
-			if p.pos == len(p.src) {
-				return p.errorf("expected ]")
-			}
-			if p.src[p.pos] == ']' {
-				p.pos++
-				writeByte(buf, ']')
-				return nil
-			}
-		}
-	}
-
-	writeByte(buf, '\n')
-	for i := 0; ; i++ {
-		writeJSONIndent(buf, prefix, indent, depth+1)
-		if err := p.writeJSONValueCurrent(buf, prefix, indent, depth+1, canonical); err != nil {
-			return err
-		}
-		p.skipSeparators()
-		if p.pos == len(p.src) {
-			return p.errorf("expected ]")
-		}
-		if p.src[p.pos] == ']' {
-			p.pos++
-			writeByte(buf, '\n')
-			writeJSONIndent(buf, prefix, indent, depth)
-			writeByte(buf, ']')
-			return nil
-		}
-		writeByte(buf, ',')
-		writeByte(buf, '\n')
-	}
 }
 
 type jsonMembers struct {
@@ -336,4 +283,11 @@ func (m *jsonMembers) Set(key string, valueStart, valueEnd int) {
 		ValueStart: valueStart,
 		ValueEnd:   valueEnd,
 	})
+}
+
+func writeJSONIndent(buf *bytes.Buffer, prefix, indent string, depth int) {
+	buf.WriteString(prefix)
+	for i := 0; i < depth; i++ {
+		buf.WriteString(indent)
+	}
 }

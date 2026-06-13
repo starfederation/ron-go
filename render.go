@@ -3,70 +3,33 @@ package ron
 import (
 	"bytes"
 	"encoding/json"
-	"sort"
 	"strconv"
-	"strings"
 	"unicode"
 	"unicode/utf8"
 )
 
-func render(value any, indent string) []byte {
-	return renderCap(value, indent, 0)
-}
-
-func renderCap(value any, indent string, capacity int) []byte {
-	buf := make(jsonBytes, 0, capacity)
-	writeValue(&buf, value, indent, 0, true)
-	writeByte(&buf, '\n')
-	return buf
-}
-
-type byteWriter interface {
-	Write([]byte) (int, error)
-	WriteByte(byte) error
-	WriteString(string) (int, error)
-}
-
-func writeBytes(buf byteWriter, value []byte) {
-	if _, err := buf.Write(value); err != nil {
-		panic(err)
-	}
-}
-
-func writeByte(buf byteWriter, value byte) {
-	if err := buf.WriteByte(value); err != nil {
-		panic(err)
-	}
-}
-
-func writeString(buf byteWriter, value string) {
-	if _, err := buf.WriteString(value); err != nil {
-		panic(err)
-	}
-}
-
-func writeValue(buf byteWriter, value any, indent string, depth int, canonical bool) {
+func writeValue(buf *bytes.Buffer, value any, indent string, depth int, canonical bool) {
 	switch value := value.(type) {
 	case nil:
-		writeString(buf, "null")
+		buf.WriteString("null")
 	case bool:
 		if value {
-			writeString(buf, "true")
+			buf.WriteString("true")
 			return
 		}
-		writeString(buf, "false")
+		buf.WriteString("false")
 	case string:
-		writeString(buf, renderString(value, false))
+		buf.WriteString(renderString(value, false))
 	case ronNumber:
-		writeString(buf, string(value))
+		buf.WriteString(string(value))
 	case json.Number:
-		writeString(buf, value.String())
+		buf.WriteString(value.String())
 	case int64:
-		writeString(buf, strconv.FormatInt(value, 10))
+		buf.WriteString(strconv.FormatInt(value, 10))
 	case uint64:
-		writeString(buf, strconv.FormatUint(value, 10))
+		buf.WriteString(strconv.FormatUint(value, 10))
 	case float64:
-		writeString(buf, strconv.FormatFloat(value, 'g', -1, 64))
+		buf.WriteString(strconv.FormatFloat(value, 'g', -1, 64))
 	case []any:
 		writeArray(buf, value, indent, depth, canonical)
 	case map[string]any, orderedObject:
@@ -76,64 +39,64 @@ func writeValue(buf byteWriter, value any, indent string, depth int, canonical b
 	}
 }
 
-func writeObject(buf byteWriter, object any, indent string, depth int, canonical bool) {
+func writeObject(buf *bytes.Buffer, object any, indent string, depth int, canonical bool) {
 	members := objectMembers(object, canonical)
 	if len(members) == 0 {
-		writeString(buf, "{}")
+		buf.WriteString("{}")
 		return
 	}
 	if shouldInlineObject(members, canonical) {
-		writeByte(buf, '{')
+		buf.WriteByte('{')
 		for _, member := range members {
-			writeString(buf, renderString(member.Key, true))
-			writeByte(buf, ' ')
+			buf.WriteString(renderString(member.Key, true))
+			buf.WriteByte(' ')
 			writeValue(buf, member.Value, indent, depth, canonical)
 		}
-		writeByte(buf, '}')
+		buf.WriteByte('}')
 		return
 	}
-	writeString(buf, "{\n")
+	buf.WriteString("{\n")
 	for i, member := range members {
 		writeIndent(buf, indent, depth+1)
-		writeString(buf, renderString(member.Key, true))
-		writeByte(buf, ' ')
+		buf.WriteString(renderString(member.Key, true))
+		buf.WriteByte(' ')
 		writeValue(buf, member.Value, indent, depth+1, canonical)
 		if i+1 < len(members) {
-			writeByte(buf, '\n')
+			buf.WriteByte('\n')
 		}
 	}
-	writeByte(buf, '\n')
+	buf.WriteByte('\n')
 	writeIndent(buf, indent, depth)
-	writeByte(buf, '}')
+	buf.WriteByte('}')
 }
 
-func writeArray(buf byteWriter, array []any, indent string, depth int, canonical bool) {
+func writeArray(buf *bytes.Buffer, array []any, indent string, depth int, canonical bool) {
 	if len(array) == 0 {
-		writeString(buf, "[]")
+		buf.WriteString("[]")
 		return
 	}
 	if shouldInlineArray(array, canonical) {
-		writeByte(buf, '[')
+		buf.WriteByte('[')
 		for i, value := range array {
 			if i > 0 {
-				writeByte(buf, ' ')
+				buf.WriteByte(' ')
 			}
 			writeValue(buf, value, indent, depth, canonical)
 		}
-		writeByte(buf, ']')
+		buf.WriteByte(']')
 		return
 	}
-	writeString(buf, "[\n")
+	buf.WriteString("[\n")
 	for i, value := range array {
 		writeIndent(buf, indent, depth+1)
 		writeValue(buf, value, indent, depth+1, canonical)
 		if i+1 < len(array) {
-			writeByte(buf, '\n')
+			buf.WriteByte('\n')
 		}
 	}
-	writeByte(buf, '\n')
+	buf.WriteByte('\n')
 	writeIndent(buf, indent, depth)
-	writeByte(buf, ']')
+	buf.WriteByte(']')
 }
 
 func shouldInlineObject(members []objectMember, canonical bool) bool {
@@ -213,27 +176,13 @@ func renderScalar(value any, canonical bool) string {
 }
 
 func renderString(value string, key bool) string {
-	if (key && canBareKey(value)) || (!key && canBareValue(value)) {
-		return value
-	}
-	return quoteString(value)
-}
-
-func canBareKey(value string) bool {
-	return value != "" && !hasStructuralRune(value)
-}
-
-func canBareValue(value string) bool {
-	return value != "" && !hasStructuralRune(value) && value != "true" && value != "false" && value != "null" && !looksLikeNumber(value)
-}
-
-func hasStructuralRune(value string) bool {
-	for i := 0; i < len(value); {
+	structural := value == ""
+	for i := 0; !structural && i < len(value); {
 		b := value[i]
 		if b < utf8.RuneSelf {
 			switch b {
 			case '{', '}', '[', ']', '"', '\'', ',', ' ', '\t', '\n', '\r':
-				return true
+				structural = true
 			}
 			i++
 			continue
@@ -241,37 +190,37 @@ func hasStructuralRune(value string) bool {
 
 		r, size := utf8.DecodeRuneInString(value[i:])
 		if unicode.IsSpace(r) {
-			return true
+			structural = true
 		}
 		i += size
 	}
-	return false
-}
+	if !structural && (key || (value != "true" && value != "false" && value != "null" && !looksLikeNumberBytes([]byte(value)))) {
+		return value
+	}
 
-func quoteString(value string) string {
-	quote := strings.Repeat("'", longestRun(value, '\'')+1)
-	return quote + value + quote
-}
-
-func longestRun(value string, quote rune) int {
 	run := 0
-	best := 0
+	longest := 0
 	for _, r := range value {
-		if r == quote {
+		if r == '\'' {
 			run++
-			if run > best {
-				best = run
+			if run > longest {
+				longest = run
 			}
 			continue
 		}
 		run = 0
 	}
-	return best
+
+	quote := make([]byte, longest+1)
+	for i := range quote {
+		quote[i] = '\''
+	}
+	return string(quote) + value + string(quote)
 }
 
-func writeIndent(buf byteWriter, indent string, depth int) {
+func writeIndent(buf *bytes.Buffer, indent string, depth int) {
 	for i := 0; i < depth; i++ {
-		writeString(buf, indent)
+		buf.WriteString(indent)
 	}
 }
 
@@ -343,8 +292,71 @@ func objectMembers(value any, canonical bool) []objectMember {
 	}
 }
 
-func sortObjectMembers(members []objectMember) {
-	sort.Slice(members, func(i, j int) bool {
-		return members[i].Key < members[j].Key
-	})
+func writeCompactValue(buf *bytes.Buffer, value any, top, canonical bool) {
+	switch value := value.(type) {
+	case nil:
+		buf.WriteString("null")
+	case bool:
+		if value {
+			buf.WriteString("true")
+			return
+		}
+		buf.WriteString("false")
+	case string:
+		buf.WriteString(renderString(value, false))
+	case ronNumber:
+		buf.WriteString(string(value))
+	case json.Number:
+		buf.WriteString(value.String())
+	case int64:
+		buf.WriteString(strconv.FormatInt(value, 10))
+	case uint64:
+		buf.WriteString(strconv.FormatUint(value, 10))
+	case float64:
+		buf.WriteString(strconv.FormatFloat(value, 'g', -1, 64))
+	case []any:
+		buf.WriteByte('[')
+		for i, value := range value {
+			if i > 0 {
+				buf.WriteByte(' ')
+			}
+			writeCompactValue(buf, value, false, canonical)
+		}
+		buf.WriteByte(']')
+	case map[string]any, orderedObject:
+		members := objectMembers(value, canonical)
+		if len(members) == 0 {
+			buf.WriteString("{}")
+			return
+		}
+
+		if !top {
+			buf.WriteByte('{')
+		}
+		for i, member := range members {
+			if i > 0 {
+				buf.WriteByte(' ')
+			}
+			buf.WriteString(renderString(member.Key, true))
+			needsSpace := true
+			if member.Value != nil {
+				switch value := member.Value.(type) {
+				case string:
+					rendered := renderString(value, false)
+					needsSpace = rendered == "" || (rendered[0] != '\'' && rendered[0] != '"')
+				case []any, map[string]any, orderedObject:
+					needsSpace = false
+				}
+			}
+			if needsSpace {
+				buf.WriteByte(' ')
+			}
+			writeCompactValue(buf, member.Value, false, canonical)
+		}
+		if !top {
+			buf.WriteByte('}')
+		}
+	default:
+		panic("unsupported value")
+	}
 }
