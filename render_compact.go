@@ -11,15 +11,11 @@ func renderCompact(value any) []byte {
 
 func renderCompactCap(value any, capacity int) []byte {
 	buf := make(jsonBytes, 0, capacity)
-	if object, ok := value.(map[string]any); ok {
-		writeCompactObject(&buf, object, true)
-	} else {
-		writeCompactValue(&buf, value)
-	}
+	writeCompactValue(&buf, value, true, true)
 	return buf
 }
 
-func writeCompactValue(buf byteWriter, value any) {
+func writeCompactValue(buf byteWriter, value any, top, canonical bool) {
 	switch value := value.(type) {
 	case nil:
 		writeString(buf, "null")
@@ -42,52 +38,46 @@ func writeCompactValue(buf byteWriter, value any) {
 	case float64:
 		writeString(buf, strconv.FormatFloat(value, 'g', -1, 64))
 	case []any:
-		writeCompactArray(buf, value)
-	case map[string]any:
-		writeCompactObject(buf, value, false)
+		writeCompactArray(buf, value, canonical)
+	case map[string]any, orderedObject:
+		writeCompactObject(buf, value, top, canonical)
 	default:
 		panic("unsupported value")
 	}
 }
 
-func writeCompactObject(buf byteWriter, object map[string]any, top bool) {
-	if len(object) == 0 {
+func writeCompactObject(buf byteWriter, object any, top, canonical bool) {
+	members := objectMembers(object, canonical)
+	if len(members) == 0 {
 		writeString(buf, "{}")
 		return
 	}
 
-	var keyStorage [8]string
-	keys := keyStorage[:0]
-	if len(object) > len(keyStorage) {
-		keys = make([]string, 0, len(object))
-	}
-	keys = appendSortedObjectKeys(keys, object)
-
 	if !top {
 		writeByte(buf, '{')
 	}
-	for i, key := range keys {
+	for i, member := range members {
 		if i > 0 {
 			writeByte(buf, ' ')
 		}
-		writeString(buf, renderString(key, true))
-		if compactNeedsKeyValueSpace(object[key]) {
+		writeString(buf, renderString(member.Key, true))
+		if compactNeedsKeyValueSpace(member.Value) {
 			writeByte(buf, ' ')
 		}
-		writeCompactValue(buf, object[key])
+		writeCompactValue(buf, member.Value, false, canonical)
 	}
 	if !top {
 		writeByte(buf, '}')
 	}
 }
 
-func writeCompactArray(buf byteWriter, array []any) {
+func writeCompactArray(buf byteWriter, array []any, canonical bool) {
 	writeByte(buf, '[')
 	for i, value := range array {
 		if i > 0 {
 			writeByte(buf, ' ')
 		}
-		writeCompactValue(buf, value)
+		writeCompactValue(buf, value, false, canonical)
 	}
 	writeByte(buf, ']')
 }
@@ -102,7 +92,7 @@ func compactNeedsKeyValueSpace(value any) bool {
 	case string:
 		rendered := renderString(value, false)
 		return rendered == "" || (rendered[0] != '\'' && rendered[0] != '"')
-	case []any, map[string]any:
+	case []any, map[string]any, orderedObject:
 		return false
 	default:
 		return true
