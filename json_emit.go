@@ -3,7 +3,6 @@ package ron
 import (
 	"bytes"
 	"encoding/json"
-	"sort"
 	"strconv"
 )
 
@@ -58,43 +57,39 @@ func writeJSONValue(buf byteWriter, value any, prefix, indent string, depth int)
 		writeString(buf, strconv.FormatFloat(value, 'g', -1, 64))
 	case []any:
 		writeJSONArray(buf, value, prefix, indent, depth)
-	case map[string]any:
+	case map[string]any, orderedObject:
 		writeJSONObject(buf, value, prefix, indent, depth)
 	default:
 		panic("unsupported value")
 	}
 }
 
-func writeJSONObject(buf byteWriter, object map[string]any, prefix, indent string, depth int) {
-	if len(object) == 0 {
+func writeJSONObject(buf byteWriter, object any, prefix, indent string, depth int) {
+	members := objectMembers(object, true)
+	if len(members) == 0 {
 		writeString(buf, "{}")
 		return
 	}
-	keys := make([]string, 0, len(object))
-	for key := range object {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
 	writeByte(buf, '{')
 	if indent == "" {
-		for i, key := range keys {
+		for i, member := range members {
 			if i > 0 {
 				writeByte(buf, ',')
 			}
-			writeString(buf, strconv.Quote(key))
+			writeString(buf, strconv.Quote(member.Key))
 			writeByte(buf, ':')
-			writeJSONValue(buf, object[key], prefix, indent, depth+1)
+			writeJSONValue(buf, member.Value, prefix, indent, depth+1)
 		}
 		writeByte(buf, '}')
 		return
 	}
 	writeByte(buf, '\n')
-	for i, key := range keys {
+	for i, member := range members {
 		writeJSONIndent(buf, prefix, indent, depth+1)
-		writeString(buf, strconv.Quote(key))
+		writeString(buf, strconv.Quote(member.Key))
 		writeString(buf, ": ")
-		writeJSONValue(buf, object[key], prefix, indent, depth+1)
-		if i+1 < len(keys) {
+		writeJSONValue(buf, member.Value, prefix, indent, depth+1)
+		if i+1 < len(members) {
 			writeByte(buf, ',')
 		}
 		writeByte(buf, '\n')
