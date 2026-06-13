@@ -56,6 +56,13 @@ func writeObject(buf *bytes.Buffer, object any, indent string, depth int, canoni
 		return
 	}
 	buf.WriteString("{\n")
+	writeObjectMembers(buf, members, indent, depth, canonical)
+	buf.WriteByte('\n')
+	writeIndent(buf, indent, depth)
+	buf.WriteByte('}')
+}
+
+func writeObjectMembers(buf *bytes.Buffer, members []objectMember, indent string, depth int, canonical bool) {
 	for i, member := range members {
 		writeIndent(buf, indent, depth+1)
 		buf.WriteString(renderString(member.Key, true))
@@ -65,9 +72,6 @@ func writeObject(buf *bytes.Buffer, object any, indent string, depth int, canoni
 			buf.WriteByte('\n')
 		}
 	}
-	buf.WriteByte('\n')
-	writeIndent(buf, indent, depth)
-	buf.WriteByte('}')
 }
 
 func writeArray(buf *bytes.Buffer, array []any, indent string, depth int, canonical bool) {

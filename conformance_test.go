@@ -16,11 +16,12 @@ import (
 )
 
 type conformanceManifest struct {
-	Version     int                    `json:"version"`
-	Formatting  conformanceFormatting  `json:"formatting"`
-	Valid       []conformanceValidCase `json:"valid"`
-	InvalidRON  []string               `json:"invalidRON"`
-	InvalidJSON []string               `json:"invalidJSON"`
+	Version            int                        `json:"version"`
+	Formatting         conformanceFormatting      `json:"formatting"`
+	Valid              []conformanceValidCase     `json:"valid"`
+	InvalidRON         []string                   `json:"invalidRON"`
+	InvalidJSON        []string                   `json:"invalidJSON"`
+	JSONToRONRendering []conformanceRenderingCase `json:"jsonToRONRendering"`
 }
 
 type conformanceFormatting struct {
@@ -49,6 +50,19 @@ type conformanceValidCase struct {
 	ExpectedPrettyRON        string   `json:"expectedPrettyRON"`
 	ExpectedCompactRON       string   `json:"expectedCompactRON"`
 	ExpectedCanonicalRONXXH3 string   `json:"expectedCanonicalRONXXH3"`
+}
+
+type conformanceRenderingCase struct {
+	Name            string                   `json:"name"`
+	JSONInput       string                   `json:"jsonInput"`
+	Options         conformanceFormatOptions `json:"options"`
+	TypedValueHooks []conformanceTypedHook   `json:"typedValueHooks"`
+	ExpectedRON     string                   `json:"expectedRON"`
+}
+
+type conformanceTypedHook struct {
+	Path        []any           `json:"path"`
+	ReplaceWith json.RawMessage `json:"replaceWith"`
 }
 
 type rfc8785Manifest struct {
@@ -144,6 +158,64 @@ func TestConformanceValid(t *testing.T) {
 				t.Fatalf("ToJSON generated compact RON: %v", err)
 			}
 			assertJSONEqual(t, jsonInput, compactRONJSON)
+		})
+	}
+}
+
+func TestConformanceJSONToRONRendering(t *testing.T) {
+	root, manifest := loadConformanceManifest(t)
+	for _, tc := range manifest.JSONToRONRendering {
+		t.Run(tc.Name, func(t *testing.T) {
+			input := readConformanceFile(t, root, tc.JSONInput)
+			expected := readConformanceFile(t, root, tc.ExpectedRON)
+
+			options := []Option{
+				IsPretty(tc.Options.IsPretty),
+				IsCanonical(tc.Options.IsCanonical),
+			}
+			if len(tc.TypedValueHooks) > 0 {
+				replacements := make([]any, len(tc.TypedValueHooks))
+				for i, hook := range tc.TypedValueHooks {
+					value, err := decodeJSON(hook.ReplaceWith, nil)
+					if err != nil {
+						t.Fatalf("decode hook replacement: %v", err)
+					}
+					replacements[i] = value
+				}
+
+				options = append(options, MapJSONValues(func(path []JSONPathSegment, value any) (any, bool) {
+					for i, hook := range tc.TypedValueHooks {
+						if len(path) != len(hook.Path) {
+							continue
+						}
+
+						matches := true
+						for i, segment := range path {
+							switch value := hook.Path[i].(type) {
+							case string:
+								matches = !segment.IsIndex && segment.Key == value
+							case float64:
+								matches = segment.IsIndex && segment.Index == int(value)
+							default:
+								matches = false
+							}
+							if !matches {
+								break
+							}
+						}
+						if matches {
+							return replacements[i], true
+						}
+					}
+					return nil, false
+				}))
+			}
+
+			got, err := FromJSON(input, options...)
+			if err != nil {
+				t.Fatalf("FromJSON rendering: %v", err)
+			}
+			assertBytesEqual(t, expected, got)
 		})
 	}
 }
@@ -265,7 +337,7 @@ func TestRONBufferReuse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FromJSONInto: %v", err)
 	}
-	assertBytesEqual(t, []byte("{a 1}\n"), pretty)
+	assertBytesEqual(t, []byte("a 1\n"), pretty)
 
 	buf.Reset()
 	compact, err := FromJSONCompactInto(&buf, []byte(`{"b":2}`))
@@ -358,7 +430,7 @@ func assertJSONEqual(t *testing.T, want, got []byte) {
 
 func decodeJSONForTest(t *testing.T, body []byte) any {
 	t.Helper()
-	value, err := decodeJSON(body)
+	value, err := decodeJSON(body, nil)
 	if err != nil {
 		t.Fatalf("decode JSON %q: %v", body, err)
 	}
@@ -415,7 +487,7 @@ func TestFromJSONOptionsControlPrettyAndCanonicalRON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FromJSON pretty non-canonical: %v", err)
 	}
-	assertBytesEqual(t, []byte("{\n  b 1\n  a 2\n}\n"), nonCanonicalPretty)
+	assertBytesEqual(t, []byte("b 1\na 2\n"), nonCanonicalPretty)
 }
 
 func TestNonCanonicalDuplicateKeysMoveSurvivorToLastPosition(t *testing.T) {
