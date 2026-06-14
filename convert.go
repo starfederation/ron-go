@@ -12,6 +12,7 @@ type Option func(*optionState)
 type optionState struct {
 	formatOptions
 	jsonValueMapper jsonValueMapper
+	vocabularies    map[string]struct{}
 }
 
 type formatOptions struct {
@@ -30,7 +31,8 @@ type JSONPathSegment struct {
 
 type jsonValueMapper func(path []JSONPathSegment, value any) (any, bool)
 
-// Tagged returns a single-member object that renders as a tagged RON form. An empty tag renders as #.
+// Tagged returns a single-member object that renders as a tagged RON form.
+// An empty tag renders as #. Payload validation is left to application-specific typed hooks.
 func Tagged(tag string, value any) map[string]any {
 	return map[string]any{
 		"#" + tag: value,
@@ -92,6 +94,15 @@ func ToJSONInto(dst *bytes.Buffer, src []byte, options ...Option) ([]byte, error
 	if !opts.isPretty {
 		opts.prefix = ""
 		opts.indent = ""
+	}
+	if opts.hasVocabularies() {
+		value, err := parse(src)
+		if err != nil {
+			return nil, err
+		}
+		if err := opts.validateVocabularies(value); err != nil {
+			return nil, err
+		}
 	}
 
 	p := parser{src: src}
@@ -177,6 +188,11 @@ func FromJSONInto(dst *bytes.Buffer, src []byte, options ...Option) ([]byte, err
 	value, err := decodeJSON(src, opts.jsonValueMapper)
 	if err != nil {
 		return nil, err
+	}
+	if opts.hasVocabularies() {
+		if err := opts.validateVocabularies(value); err != nil {
+			return nil, err
+		}
 	}
 	if opts.isPretty {
 		dst.Grow(len(src) * 2)

@@ -72,7 +72,7 @@ Pretty JSON-to-RON renders root object members directly and can map JSON values 
 
 ```go
 ronBody, err := ron.FromJSON(
-    []byte(`{"tx":48830,"committed":"2026-06-13T00:00:00Z"}`),
+    []byte(`{"tx":"tx-48830","committed":"2026-06-13T00:00:00Z"}`),
     ron.IsCanonical(false),
     ron.MapJSONValues(func(path []ron.JSONPathSegment, value any) (any, bool) {
         if len(path) != 1 || path[0].IsIndex {
@@ -80,7 +80,7 @@ ronBody, err := ron.FromJSON(
         }
         switch path[0].Key {
         case "tx":
-            return ron.Tagged("", "BE"), true
+            return ron.Tagged("", value), true
         case "committed":
             return ron.Tagged("time", value), true
         default:
@@ -97,9 +97,20 @@ fmt.Print(string(ronBody))
 Output:
 
 ```ron
-tx {# BE}
+tx {# tx-48830}
 committed {#time 2026-06-13T00:00:00Z}
 ```
+
+Enable a typed vocabulary to validate matching tagged values while preserving unsupported tags as ordinary RON objects:
+
+```go
+ronBody, err := ron.FromJSON(
+    []byte(`{"id":{"#uid":"00112233-4455-6677-8899-aabbccddeeff"}}`),
+    ron.EnableVocabularies(ron.VocabularyCoreV1),
+)
+```
+
+`VocabularyCoreV1` supports `#uid`, `#url`, `#dec`, `#b64`, `#sha256`, `#`, and `#tag`.
 
 ## Conformance
 
@@ -118,7 +129,7 @@ nix develop
 go test ./...
 ```
 
-Without Nix, set `RON_TESTDATA_DIR=/path/to/ron/testdata` or provide local `testdata/conformance` and `testdata/rfc8785` directories. Otherwise testdata-backed tests are skipped.
+Without Nix, set `RON_TESTDATA_DIR=/path/to/ron/testdata` or provide local `testdata/conformance`, `testdata/rfc8785`, and `testdata/vocabularies` directories. Otherwise testdata-backed tests are skipped.
 
 To update to the latest reference corpus:
 

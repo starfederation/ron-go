@@ -45,6 +45,10 @@ func writeObject(buf *bytes.Buffer, object any, indent string, depth int, canoni
 		buf.WriteString("{}")
 		return
 	}
+	if len(members) == 1 && isTaggedKey(members[0].Key) {
+		writeTaggedObject(buf, members[0], indent, depth, canonical)
+		return
+	}
 	if shouldInlineObject(members, canonical) {
 		buf.WriteByte('{')
 		for _, member := range members {
@@ -59,6 +63,18 @@ func writeObject(buf *bytes.Buffer, object any, indent string, depth int, canoni
 	writeObjectMembers(buf, members, indent, depth, canonical)
 	buf.WriteByte('\n')
 	writeIndent(buf, indent, depth)
+	buf.WriteByte('}')
+}
+
+func writeTaggedObject(buf *bytes.Buffer, member objectMember, indent string, depth int, canonical bool) {
+	buf.WriteByte('{')
+	buf.WriteString(renderString(member.Key, true))
+	buf.WriteByte(' ')
+	if inline, ok := renderInlineValue(member.Value, canonical); ok && len(inline)+len(member.Key)+3 <= 80 {
+		buf.WriteString(inline)
+	} else {
+		writeValue(buf, member.Value, indent, depth, canonical)
+	}
 	buf.WriteByte('}')
 }
 
@@ -118,6 +134,10 @@ func shouldInlineObject(members []objectMember, canonical bool) bool {
 	return size <= 80
 }
 
+func isTaggedKey(key string) bool {
+	return len(key) > 0 && key[0] == '#'
+}
+
 func shouldInlineArray(array []any, canonical bool) bool {
 	size := 2
 	for i, value := range array {
@@ -142,6 +162,73 @@ func canInlineValue(value any, canonical bool) bool {
 		return shouldInlineObject(objectMembers(value, canonical), canonical)
 	default:
 		return false
+	}
+}
+
+func renderInlineValue(value any, canonical bool) (string, bool) {
+	switch value := value.(type) {
+	case nil, bool, string, ronNumber, json.Number, int64, uint64, float64:
+		return renderScalar(value, canonical), true
+	case []any:
+		parts := make([]string, len(value))
+		size := 2
+		for i, child := range value {
+			part, ok := renderInlineValue(child, canonical)
+			if !ok {
+				return "", false
+			}
+			parts[i] = part
+			size += len(part)
+			if i > 0 {
+				size++
+			}
+			if size > 80 {
+				return "", false
+			}
+		}
+		var buf bytes.Buffer
+		buf.Grow(size)
+		buf.WriteByte('[')
+		for i, part := range parts {
+			if i > 0 {
+				buf.WriteByte(' ')
+			}
+			buf.WriteString(part)
+		}
+		buf.WriteByte(']')
+		return buf.String(), true
+	case map[string]any, orderedObject:
+		members := objectMembers(value, canonical)
+		parts := make([]string, len(members))
+		size := 2
+		for i, member := range members {
+			part, ok := renderInlineValue(member.Value, canonical)
+			if !ok {
+				return "", false
+			}
+			key := renderString(member.Key, true)
+			parts[i] = key + " " + part
+			size += len(parts[i])
+			if i > 0 {
+				size++
+			}
+			if size > 80 {
+				return "", false
+			}
+		}
+		var buf bytes.Buffer
+		buf.Grow(size)
+		buf.WriteByte('{')
+		for i, part := range parts {
+			if i > 0 {
+				buf.WriteByte(' ')
+			}
+			buf.WriteString(part)
+		}
+		buf.WriteByte('}')
+		return buf.String(), true
+	default:
+		return "", false
 	}
 }
 

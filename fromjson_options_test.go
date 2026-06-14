@@ -11,7 +11,7 @@ func TestFromJSONPrettyRootObjectsElideBraces(t *testing.T) {
 }
 
 func TestFromJSONValueMapperCanRenderTaggedRONValues(t *testing.T) {
-	input := []byte(`{"tx":48830,"committed":"2026-06-13T00:00:00Z","reactorId":47833}`)
+	input := []byte(`{"tx":"tx-48830","committed":"2026-06-13T00:00:00Z","reactorId":"reactor-BY"}`)
 	got, err := FromJSON(
 		input,
 		IsCanonical(false),
@@ -21,12 +21,10 @@ func TestFromJSONValueMapperCanRenderTaggedRONValues(t *testing.T) {
 			}
 
 			switch path[0].Key {
-			case "tx":
-				return Tagged("", "BE"), true
+			case "tx", "reactorId":
+				return Tagged("", value), true
 			case "committed":
 				return Tagged("time", value), true
-			case "reactorId":
-				return Tagged("", "BY"), true
 			default:
 				return nil, false
 			}
@@ -36,6 +34,6 @@ func TestFromJSONValueMapperCanRenderTaggedRONValues(t *testing.T) {
 		t.Fatalf("FromJSON tagged values: %v", err)
 	}
 
-	want := []byte("tx {# BE}\ncommitted {#time 2026-06-13T00:00:00Z}\nreactorId {# BY}\n")
+	want := []byte("tx {# tx-48830}\ncommitted {#time 2026-06-13T00:00:00Z}\nreactorId {# reactor-BY}\n")
 	assertBytesEqual(t, want, got)
 }
