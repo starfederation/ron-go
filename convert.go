@@ -190,7 +190,8 @@ func FromJSONInto(dst *bytes.Buffer, src []byte, options ...Option) ([]byte, err
 		return nil, err
 	}
 	if opts.hasVocabularies() {
-		if err := opts.validateVocabularies(value); err != nil {
+		value, err = opts.parseVocabularies(value)
+		if err != nil {
 			return nil, err
 		}
 	}

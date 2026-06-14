@@ -26,7 +26,7 @@
           pname = "ron-go-tests";
           version = "0";
           src = self;
-          vendorHash = "sha256-1E37JfeKMspEBbJOtp7zDyIqoxF2Sd3y9imhtYRKfjw=";
+          vendorHash = "sha256-jOPchakpD0ySYnO2NtkN79jSYk70lnACIqJpdJluv6c=";
 
           preCheck = ''
             ln -s ${ron}/testdata testdata

@@ -110,7 +110,7 @@ ronBody, err := ron.FromJSON(
 )
 ```
 
-`VocabularyCoreV1` supports `#uid`, `#url`, `#dec`, `#b64`, `#sha256`, `#`, and `#tag`.
+`VocabularyCoreV1` supports `#uid`, `#url`, `#dec`, `#b64`, `#sha256`, `#`, and `#tag`. Vocabulary-aware parsing maps those tags to native Go values: `ron.UUID`, `*url.URL`, `ron.Decimal`, `ron.Bytes`, `ron.SHA256`, `ron.EntityRef`, and `ron.OpaqueTag`.
 
 ## Conformance
 

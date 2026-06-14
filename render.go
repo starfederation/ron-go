@@ -9,6 +9,11 @@ import (
 )
 
 func writeValue(buf *bytes.Buffer, value any, indent string, depth int, canonical bool) {
+	if member, ok := coreTaggedMember(value); ok {
+		writeTaggedObject(buf, member, indent, depth, canonical)
+		return
+	}
+
 	switch value := value.(type) {
 	case nil:
 		buf.WriteString("null")
@@ -138,6 +143,18 @@ func isTaggedKey(key string) bool {
 	return len(key) > 0 && key[0] == '#'
 }
 
+func renderCoreTaggedValue(value any, canonical bool) (string, bool) {
+	member, ok := coreTaggedMember(value)
+	if !ok {
+		return "", false
+	}
+	payload, ok := renderInlineValue(member.Value, canonical)
+	if !ok {
+		return "", false
+	}
+	return "{" + renderString(member.Key, true) + " " + payload + "}", true
+}
+
 func shouldInlineArray(array []any, canonical bool) bool {
 	size := 2
 	for i, value := range array {
@@ -153,6 +170,10 @@ func shouldInlineArray(array []any, canonical bool) bool {
 }
 
 func canInlineValue(value any, canonical bool) bool {
+	if _, ok := coreTaggedMember(value); ok {
+		return true
+	}
+
 	switch value := value.(type) {
 	case nil, bool, string, ronNumber, json.Number, int64, uint64, float64:
 		return true
@@ -166,6 +187,10 @@ func canInlineValue(value any, canonical bool) bool {
 }
 
 func renderInlineValue(value any, canonical bool) (string, bool) {
+	if rendered, ok := renderCoreTaggedValue(value, canonical); ok {
+		return rendered, true
+	}
+
 	switch value := value.(type) {
 	case nil, bool, string, ronNumber, json.Number, int64, uint64, float64:
 		return renderScalar(value, canonical), true
@@ -233,6 +258,10 @@ func renderInlineValue(value any, canonical bool) (string, bool) {
 }
 
 func renderScalar(value any, canonical bool) string {
+	if rendered, ok := renderCoreTaggedValue(value, canonical); ok {
+		return rendered
+	}
+
 	switch value := value.(type) {
 	case nil:
 		return "null"
@@ -384,6 +413,19 @@ func objectMembers(value any, canonical bool) []objectMember {
 }
 
 func writeCompactValue(buf *bytes.Buffer, value any, top, canonical bool) {
+	if member, ok := coreTaggedMember(value); ok {
+		buf.WriteByte('{')
+		buf.WriteString(renderString(member.Key, true))
+		if inline, ok := renderInlineValue(member.Value, canonical); ok {
+			buf.WriteByte(' ')
+			buf.WriteString(inline)
+		} else {
+			writeCompactValue(buf, member.Value, false, canonical)
+		}
+		buf.WriteByte('}')
+		return
+	}
+
 	switch value := value.(type) {
 	case nil:
 		buf.WriteString("null")

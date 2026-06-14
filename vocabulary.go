@@ -18,12 +18,17 @@ func (opts optionState) hasVocabularies() bool {
 }
 
 func (opts optionState) validateVocabularies(value any) error {
+	_, err := opts.parseVocabularies(value)
+	return err
+}
+
+func (opts optionState) parseVocabularies(value any) (any, error) {
 	for uri := range opts.vocabularies {
 		if !isSupportedVocabulary(uri) {
-			return newError("unsupported vocabulary: " + uri)
+			return nil, newError("unsupported vocabulary: " + uri)
 		}
 	}
-	return opts.validateVocabularyValue(value)
+	return opts.parseVocabularyValue(value)
 }
 
 func isSupportedVocabulary(uri string) bool {
@@ -35,30 +40,51 @@ func isSupportedVocabulary(uri string) bool {
 	}
 }
 
-func (opts optionState) validateVocabularyValue(value any) error {
+func (opts optionState) parseVocabularyValue(value any) (any, error) {
 	switch value := value.(type) {
 	case []any:
-		for _, child := range value {
-			if err := opts.validateVocabularyValue(child); err != nil {
-				return err
+		for i, child := range value {
+			parsed, err := opts.parseVocabularyValue(child)
+			if err != nil {
+				return nil, err
 			}
+			value[i] = parsed
 		}
-		return nil
-	case map[string]any, orderedObject:
+		return value, nil
+	case map[string]any:
 		members := objectMembers(value, false)
 		if tag, payload, ok := opts.enabledTypedValue(members); ok {
 			if len(members) != 1 {
-				return newError("typed vocabulary object must have exactly one member")
+				return nil, newError("typed vocabulary object must have exactly one member")
 			}
-			return opts.validateTypedPayload(tag, payload)
+			return opts.parseTypedPayload(tag, payload)
 		}
-		for _, member := range members {
-			if err := opts.validateVocabularyValue(member.Value); err != nil {
-				return err
+		for key, child := range value {
+			parsed, err := opts.parseVocabularyValue(child)
+			if err != nil {
+				return nil, err
 			}
+			value[key] = parsed
 		}
+		return value, nil
+	case orderedObject:
+		if tag, payload, ok := opts.enabledTypedValue(value.Members); ok {
+			if len(value.Members) != 1 {
+				return nil, newError("typed vocabulary object must have exactly one member")
+			}
+			return opts.parseTypedPayload(tag, payload)
+		}
+		for i, member := range value.Members {
+			parsed, err := opts.parseVocabularyValue(member.Value)
+			if err != nil {
+				return nil, err
+			}
+			value.Members[i].Value = parsed
+		}
+		return value, nil
+	default:
+		return value, nil
 	}
-	return nil
 }
 
 func (opts optionState) enabledTypedValue(members []objectMember) (string, any, bool) {
@@ -70,9 +96,9 @@ func (opts optionState) enabledTypedValue(members []objectMember) (string, any, 
 	return "", nil, false
 }
 
-func (opts optionState) validateTypedPayload(tag string, payload any) error {
+func (opts optionState) parseTypedPayload(tag string, payload any) (any, error) {
 	if opts.isCoreTag(tag) {
-		return opts.validateCorePayload(tag, payload)
+		return opts.parseCorePayload(tag, payload)
 	}
-	return newError("unsupported typed tag")
+	return nil, newError("unsupported typed tag")
 }
