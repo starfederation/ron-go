@@ -16,8 +16,9 @@ func EnableVocabularies(uris ...string) Option {
 
 func defaultVocabularies() map[string]struct{} {
 	return map[string]struct{}{
-		VocabularyCoreV1: {},
-		VocabularyTimeV1: {},
+		VocabularyCoreV1:    {},
+		VocabularyTimeV1:    {},
+		VocabularyNetworkV1: {},
 	}
 }
 
@@ -28,7 +29,7 @@ func (opts optionState) hasVocabularies() bool {
 func (opts optionState) parseVocabularies(value any) (any, error) {
 	for uri := range opts.vocabularies {
 		switch uri {
-		case VocabularyCoreV1, VocabularyTimeV1:
+		case VocabularyCoreV1, VocabularyTimeV1, VocabularyNetworkV1:
 		default:
 			return nil, newError("unsupported vocabulary: " + uri)
 		}
@@ -85,7 +86,7 @@ func (opts optionState) parseVocabularyValue(value any) (any, error) {
 
 func (opts optionState) enabledTypedValue(members []objectMember) (string, any, bool) {
 	for _, member := range members {
-		if opts.isCoreTag(member.Key) || opts.isTimeTag(member.Key) {
+		if opts.isCoreTag(member.Key) || opts.isTimeTag(member.Key) || opts.isNetworkTag(member.Key) {
 			return member.Key, member.Value, true
 		}
 	}
@@ -99,6 +100,9 @@ func (opts optionState) parseTypedPayload(tag string, payload any) (any, error) 
 	if opts.isTimeTag(tag) {
 		return opts.parseTimePayload(tag, payload)
 	}
+	if opts.isNetworkTag(tag) {
+		return opts.parseNetworkPayload(tag, payload)
+	}
 	return nil, newError("unsupported typed tag")
 }
 
@@ -106,5 +110,8 @@ func typedTaggedMember(value any) (objectMember, bool) {
 	if member, ok := coreTaggedMember(value); ok {
 		return member, true
 	}
-	return timeTaggedMember(value)
+	if member, ok := timeTaggedMember(value); ok {
+		return member, true
+	}
+	return networkTaggedMember(value)
 }
