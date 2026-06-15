@@ -16,6 +16,7 @@ Supported vocabularies are enabled by default.
 | [Time](./vocabulary-time.md) | `https://ron.dev/vocab/time/v1` | `ron.Instant`, `ron.Duration` | Go stdlib `time` |
 | [Network](./vocabulary-network.md) | `https://ron.dev/vocab/network/v1` | `ron.IPv4`, `ron.IPv6`, `ron.CIDR` | Go stdlib `net/netip` |
 | [Math](./vocabulary-math.md) | `https://ron.dev/vocab/math/v1` | `ron.Int64`, `ron.Uint64`, `ron.Float64`, vectors, matrices, `ron.Quaternion`, `ron.Euler` | Local `components/math` |
+| [Spatial](./vocabulary-spatial.md) | `https://ron.dev/vocab/spatial/v1` | `ron.LngLatAlt`, `ron.Box2`, `ron.Box3`, `ron.Sphere`, `ron.Plane`, `ron.Ray`, `ron.Line2`, `ron.Line3`, `ron.Triangle`, `ron.Frustum`, `ron.SphericalHarmonics3`, `ron.VoxelSet` | `github.com/paulmach/orb`, local `components/math` |
 
 ## Planned vocabularies
 
@@ -23,7 +24,6 @@ These vocabularies are defined by the reference repo but are not implemented in 
 
 | Vocabulary | URI | Status |
 | --- | --- | --- |
-| Spatial | `https://ron.dev/vocab/spatial/v1` | Planned |
 | Geo | `https://ron.dev/vocab/geo/v1` | Planned |
 | Color | `https://ron.dev/vocab/color/v1` | Planned |
 

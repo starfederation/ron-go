@@ -37,6 +37,8 @@ func writeValue(buf *bytes.Buffer, value any, indent string, depth int, canonica
 		buf.WriteString(strconv.FormatFloat(value, 'g', -1, 64))
 	case []any:
 		writeArray(buf, value, indent, depth, canonical)
+	case multilineArray:
+		writeMultilineArray(buf, []any(value), indent, depth, canonical)
 	case map[string]any, orderedObject:
 		writeObject(buf, value, indent, depth, canonical)
 	default:
@@ -95,6 +97,8 @@ func writeObjectMembers(buf *bytes.Buffer, members []objectMember, indent string
 	}
 }
 
+type multilineArray []any
+
 func writeArray(buf *bytes.Buffer, array []any, indent string, depth int, canonical bool) {
 	if len(array) == 0 {
 		buf.WriteString("[]")
@@ -109,6 +113,24 @@ func writeArray(buf *bytes.Buffer, array []any, indent string, depth int, canoni
 			writeValue(buf, value, indent, depth, canonical)
 		}
 		buf.WriteByte(']')
+		return
+	}
+	buf.WriteString("[\n")
+	for i, value := range array {
+		writeIndent(buf, indent, depth+1)
+		writeValue(buf, value, indent, depth+1, canonical)
+		if i+1 < len(array) {
+			buf.WriteByte('\n')
+		}
+	}
+	buf.WriteByte('\n')
+	writeIndent(buf, indent, depth)
+	buf.WriteByte(']')
+}
+
+func writeMultilineArray(buf *bytes.Buffer, array []any, indent string, depth int, canonical bool) {
+	if len(array) == 0 {
+		buf.WriteString("[]")
 		return
 	}
 	buf.WriteString("[\n")
@@ -282,6 +304,10 @@ func renderScalar(value any, canonical bool) string {
 		var buf bytes.Buffer
 		writeArray(&buf, value, "", 0, canonical)
 		return buf.String()
+	case multilineArray:
+		var buf bytes.Buffer
+		writeMultilineArray(&buf, []any(value), "", 0, canonical)
+		return buf.String()
 	case map[string]any, orderedObject:
 		var buf bytes.Buffer
 		writeObject(&buf, value, "", 0, canonical)
@@ -443,6 +469,15 @@ func writeCompactValue(buf *bytes.Buffer, value any, top, canonical bool) {
 		buf.WriteString(strconv.FormatUint(value, 10))
 	case float64:
 		buf.WriteString(strconv.FormatFloat(value, 'g', -1, 64))
+	case multilineArray:
+		buf.WriteByte('[')
+		for i, value := range value {
+			if i > 0 {
+				buf.WriteByte(' ')
+			}
+			writeCompactValue(buf, value, false, canonical)
+		}
+		buf.WriteByte(']')
 	case []any:
 		buf.WriteByte('[')
 		for i, value := range value {
