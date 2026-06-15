@@ -7,8 +7,10 @@ import (
 )
 
 type vocabularyManifest struct {
-	Valid   []vocabularyCase `json:"valid"`
-	Invalid []vocabularyCase `json:"invalid"`
+	Valid           []vocabularyCase        `json:"valid"`
+	Invalid         []vocabularyCase        `json:"invalid"`
+	InvalidProfiles []vocabularyProfileCase `json:"invalidProfiles"`
+	Registry        string                  `json:"registry"`
 }
 
 type vocabularyCase struct {
@@ -16,6 +18,12 @@ type vocabularyCase struct {
 	Vocabularies []string `json:"vocabularies"`
 	InputJSON    string   `json:"inputJSON"`
 	ExpectedRON  string   `json:"expectedRON"`
+}
+
+type vocabularyProfileCase struct {
+	Name    string `json:"name"`
+	Profile string `json:"profile"`
+	Reason  string `json:"reason"`
 }
 
 func loadVocabularyManifest(t *testing.T) (string, vocabularyManifest) {
@@ -28,6 +36,53 @@ func loadVocabularyManifest(t *testing.T) (string, vocabularyManifest) {
 		t.Fatalf("unmarshal vocabulary manifest: %v", err)
 	}
 	return root, manifest
+}
+
+func TestVocabularyRegistryFixtureLoads(t *testing.T) {
+	root, manifest := loadVocabularyManifest(t)
+	if manifest.Registry == "" {
+		t.Fatal("manifest registry is empty")
+	}
+	var registry struct {
+		Version      int `json:"version"`
+		Vocabularies []struct {
+			URI string `json:"uri"`
+		} `json:"vocabularies"`
+	}
+	if err := json.Unmarshal(readConformanceFile(t, root, manifest.Registry), &registry); err != nil {
+		t.Fatalf("unmarshal vocabulary registry: %v", err)
+	}
+	if registry.Version == 0 || len(registry.Vocabularies) == 0 {
+		t.Fatalf("registry not loaded: %#v", registry)
+	}
+}
+
+func TestVocabularyInvalidProfileFixtures(t *testing.T) {
+	root, manifest := loadVocabularyManifest(t)
+	if len(manifest.InvalidProfiles) == 0 {
+		t.Fatal("manifest invalidProfiles is empty")
+	}
+	for _, tc := range manifest.InvalidProfiles {
+		t.Run(tc.Name, func(t *testing.T) {
+			profile := readConformanceFile(t, root, tc.Profile)
+			if err := ValidateVocabularyProfile(profile); err == nil {
+				t.Fatal("ValidateVocabularyProfile accepted invalid profile")
+			}
+		})
+	}
+}
+
+func TestVocabularyProfileAllowsOptionalUnknown(t *testing.T) {
+	if err := ValidateVocabularyProfile([]byte(`{"vocabularies":{"https://example.com/unknown/v1":false}}`)); err != nil {
+		t.Fatalf("ValidateVocabularyProfile rejected optional unknown vocabulary: %v", err)
+	}
+}
+
+func TestVocabularyProfileAllowsRegisteredCustomRequired(t *testing.T) {
+	profile := []byte(`{"vocabularies":{"https://example.com/vocab/invoice/v1":true}}`)
+	if err := ValidateVocabularyProfile(profile, invoiceVocabularyOption()); err != nil {
+		t.Fatalf("ValidateVocabularyProfile rejected custom vocabulary: %v", err)
+	}
 }
 
 func TestSupportedVocabulariesAreEnabledByDefault(t *testing.T) {
