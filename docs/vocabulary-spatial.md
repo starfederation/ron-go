@@ -8,19 +8,19 @@ Spatial vocabulary support is enabled by default. It can also be named explicitl
 ron.EnableVocabularies(ron.VocabularySpatialV1)
 ```
 
-Spatial values use `github.com/paulmach/orb` where it fits 2D geospatial shapes, and local `components/math` types for 3D geometry.
+Spatial values use local `components/math` types.
 
 | Tag | Meaning | Go type | External library |
 | --- | --- | --- | --- |
-| `#lla` | longitude, latitude, altitude | `ron.LngLatAlt` with `orb.Point` | `github.com/paulmach/orb` |
+| `#lla` | longitude, latitude, altitude | `ron.LngLatAlt` with `ron.Vector2` | Local `components/math` |
 | `#sph` | spherical coordinates | `ron.Spherical` | Local `components/math` |
 | `#cyl` | cylindrical coordinates | `ron.Cylindrical` | Local `components/math` |
-| `#bx2` | 2D box | `ron.Box2` alias of `orb.Bound` | `github.com/paulmach/orb` |
+| `#bx2` | 2D box | `ron.Box2` | Local `components/math` |
 | `#bx3` | 3D box | `ron.Box3` | Local `components/math` |
 | `#spr` | sphere | `ron.Sphere` | Local `components/math` |
 | `#pln` | plane | `ron.Plane` | Local `components/math` |
 | `#ray` | ray | `ron.Ray` | Local `components/math` |
-| `#ln2` | 2D line segment | `ron.Line2` with `orb.LineString` | `github.com/paulmach/orb` |
+| `#ln2` | 2D line segment | `ron.Line2` | Local `components/math` |
 | `#ln3` | 3D line segment | `ron.Line3` | Local `components/math` |
 | `#tri` | triangle | `ron.Triangle` | Local `components/math` |
 | `#fru` | frustum planes | `ron.Frustum` | Local `components/math` |
@@ -30,5 +30,5 @@ Spatial values use `github.com/paulmach/orb` where it fits 2D geospatial shapes,
 ## Type notes
 
 - Spatial distances use meters unless a tag states otherwise.
-- `#lla` stores longitude/latitude in an `orb.Point` and altitude separately.
+- `#lla` stores longitude/latitude in a `ron.Vector2` and altitude separately.
 - `#vox` stores sparse cells as coordinate/value pairs; cell values may contain typed values from enabled vocabularies.

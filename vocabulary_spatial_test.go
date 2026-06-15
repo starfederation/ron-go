@@ -1,10 +1,6 @@
 package ron
 
-import (
-	"testing"
-
-	"github.com/paulmach/orb"
-)
+import "testing"
 
 func TestSpatialVocabularyFixtures(t *testing.T) {
 	root, manifest := loadVocabularyManifest(t)
@@ -48,7 +44,7 @@ func TestSpatialVocabularyParsesNativeValues(t *testing.T) {
 	}
 	object := parsed.(orderedObject)
 
-	if got, ok := objectValue(object, "home").(LngLatAlt); !ok || got.Point != (orb.Point{-73.9857, 40.7484}) || got.Altitude != 381 {
+	if got, ok := objectValue(object, "home").(LngLatAlt); !ok || got.Point != (Vector2{X: -73.9857, Y: 40.7484}) || got.Altitude != 381 {
 		t.Fatalf("home type = %T %[1]v", objectValue(object, "home"))
 	}
 	if got, ok := objectValue(object, "bounds").(Box3); !ok || got.Max.X != 10 || got.Max.Y != 10 || got.Max.Z != 10 {
@@ -60,7 +56,7 @@ func TestSpatialVocabularyParsesNativeValues(t *testing.T) {
 }
 
 func TestSpatialVocabularyRendersNativeValues(t *testing.T) {
-	assertBytesEqual(t, []byte("{#lla [-73.9857 40.7484 381]}"), []byte(renderScalar(LngLatAlt{Point: orb.Point{-73.9857, 40.7484}, Altitude: 381}, true)))
-	assertBytesEqual(t, []byte("{#bx2 [[0 0] [10 10]]}"), []byte(renderScalar(Box2{Min: orb.Point{0, 0}, Max: orb.Point{10, 10}}, true)))
-	assertBytesEqual(t, []byte("{#ln2 [[0 0] [1 1]]}"), []byte(renderScalar(Line2{Line: orb.LineString{{0, 0}, {1, 1}}}, true)))
+	assertBytesEqual(t, []byte("{#lla [-73.9857 40.7484 381]}"), []byte(renderScalar(LngLatAlt{Point: Vector2{X: -73.9857, Y: 40.7484}, Altitude: 381}, true)))
+	assertBytesEqual(t, []byte("{#bx2 [[0 0] [10 10]]}"), []byte(renderScalar(Box2{Min: Vector2{X: 0, Y: 0}, Max: Vector2{X: 10, Y: 10}}, true)))
+	assertBytesEqual(t, []byte("{#ln2 [[0 0] [1 1]]}"), []byte(renderScalar(Line2{Start: Vector2{X: 0, Y: 0}, End: Vector2{X: 1, Y: 1}}, true)))
 }
