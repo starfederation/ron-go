@@ -32,12 +32,8 @@ func (opts optionState) hasVocabularies() bool {
 
 func (opts optionState) parseVocabularies(value any) (any, error) {
 	for uri := range opts.vocabularies {
-		switch uri {
-		case VocabularyCoreV1, VocabularyTimeV1, VocabularyNetworkV1, VocabularyMathV1, VocabularySpatialV1, VocabularyGeoV1, VocabularyColorV1:
-		default:
-			if !opts.isCustomVocabulary(uri) {
-				return nil, newError("unsupported vocabulary: " + uri)
-			}
+		if !opts.supportsVocabulary(uri) {
+			return nil, newError("unsupported vocabulary: " + uri)
 		}
 	}
 	return opts.parseVocabularyValue(value)

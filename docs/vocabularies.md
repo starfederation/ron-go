@@ -10,6 +10,8 @@ Language-neutral vocabulary definitions live in the reference repo:
 
 Supported vocabularies are enabled by default.
 
+Use `ValidateVocabularyProfile` to reject profiles that require unknown or unsupported vocabularies. Optional unknown vocabularies are allowed and remain ordinary JSON/RON unless an option-scoped custom vocabulary handles them.
+
 | Vocabulary | URI | Go types | External libraries |
 | --- | --- | --- | --- |
 | [Core](./vocabulary-core.md) | `https://ron.dev/vocab/core/v1` | `ron.UUID`, `*url.URL`, `*ron.Decimal`, `ron.Bytes`, `ron.SHA256`, `ron.EntityRef`, `ron.OpaqueTag` | `github.com/google/uuid`, `github.com/cockroachdb/apd/v3` |
