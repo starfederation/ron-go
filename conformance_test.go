@@ -2,17 +2,15 @@ package ron
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"math"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strconv"
 	"testing"
-
-	"github.com/zeebo/xxh3"
 )
 
 type conformanceManifest struct {
@@ -42,14 +40,14 @@ type conformanceFormatOptions struct {
 }
 
 type conformanceValidCase struct {
-	Name                     string   `json:"name"`
-	RONInputs                []string `json:"ronInputs"`
-	JSONInput                string   `json:"jsonInput"`
-	ExpectedPrettyJSON       string   `json:"expectedPrettyJSON"`
-	ExpectedCompactJSON      string   `json:"expectedCompactJSON"`
-	ExpectedPrettyRON        string   `json:"expectedPrettyRON"`
-	ExpectedCompactRON       string   `json:"expectedCompactRON"`
-	ExpectedCanonicalRONXXH3 string   `json:"expectedCanonicalRONXXH3"`
+	Name                       string   `json:"name"`
+	RONInputs                  []string `json:"ronInputs"`
+	JSONInput                  string   `json:"jsonInput"`
+	ExpectedPrettyJSON         string   `json:"expectedPrettyJSON"`
+	ExpectedCompactJSON        string   `json:"expectedCompactJSON"`
+	ExpectedPrettyRON          string   `json:"expectedPrettyRON"`
+	ExpectedCompactRON         string   `json:"expectedCompactRON"`
+	ExpectedCanonicalRONSHA256 string   `json:"expectedCanonicalRONSHA256"`
 }
 
 type conformanceRenderingCase struct {
@@ -72,11 +70,11 @@ type rfc8785Manifest struct {
 }
 
 type rfc8785ValidCase struct {
-	Name                      string `json:"name"`
-	InputJSON                 string `json:"inputJSON"`
-	ExpectedCanonicalJSON     string `json:"expectedCanonicalJSON"`
-	ExpectedCanonicalUTF8Hex  string `json:"expectedCanonicalUTF8Hex"`
-	ExpectedCanonicalJSONXXH3 string `json:"expectedCanonicalJSONXXH3"`
+	Name                        string `json:"name"`
+	InputJSON                   string `json:"inputJSON"`
+	ExpectedCanonicalJSON       string `json:"expectedCanonicalJSON"`
+	ExpectedCanonicalUTF8Hex    string `json:"expectedCanonicalUTF8Hex"`
+	ExpectedCanonicalJSONSHA256 string `json:"expectedCanonicalJSONSHA256"`
 }
 
 type rfc8785InvalidJSONCase struct {
@@ -147,10 +145,10 @@ func TestConformanceValid(t *testing.T) {
 				t.Fatalf("FromJSON compact canonical: %v", err)
 			}
 			assertBytesEqual(t, expectedCompactRON, compactRON)
-			if tc.ExpectedCanonicalRONXXH3 != "" {
-				gotHash := formatXXH3Hash128(compactRON)
-				if gotHash != tc.ExpectedCanonicalRONXXH3 {
-					t.Fatalf("canonical RON XXH3 mismatch\nwant: %s\n got: %s", tc.ExpectedCanonicalRONXXH3, gotHash)
+			if tc.ExpectedCanonicalRONSHA256 != "" {
+				gotHash := formatSHA256(compactRON)
+				if gotHash != tc.ExpectedCanonicalRONSHA256 {
+					t.Fatalf("canonical RON SHA-256 mismatch\nwant: %s\n got: %s", tc.ExpectedCanonicalRONSHA256, gotHash)
 				}
 			}
 			compactRONJSON, err := ToJSON(compactRON)
@@ -261,9 +259,9 @@ func TestRFC8785CanonicalJSONValid(t *testing.T) {
 			assertBytesEqual(t, expectedJSON, got)
 			assertBytesEqual(t, bytes.TrimSpace(expectedHex), []byte(hex.EncodeToString(got)))
 
-			gotHash := formatXXH3Hash128(got)
-			if gotHash != tc.ExpectedCanonicalJSONXXH3 {
-				t.Fatalf("canonical JSON XXH3 mismatch\nwant: %s\n got: %s", tc.ExpectedCanonicalJSONXXH3, gotHash)
+			gotHash := formatSHA256(got)
+			if gotHash != tc.ExpectedCanonicalJSONSHA256 {
+				t.Fatalf("canonical JSON SHA-256 mismatch\nwant: %s\n got: %s", tc.ExpectedCanonicalJSONSHA256, gotHash)
 			}
 		})
 	}
@@ -384,9 +382,9 @@ func testdataSubdir(t *testing.T, subdir string) string {
 	return root
 }
 
-func formatXXH3Hash128(body []byte) string {
-	hash := xxh3.Hash128(body)
-	return fmt.Sprintf("%016x%016x", hash.Hi, hash.Lo)
+func formatSHA256(body []byte) string {
+	hash := sha256.Sum256(body)
+	return hex.EncodeToString(hash[:])
 }
 
 func parseFloat64Hex(t *testing.T, value string) float64 {

@@ -8,16 +8,17 @@ Color vocabulary support is enabled by default. It can also be named explicitly 
 ron.EnableVocabularies(ron.VocabularyColorV1)
 ```
 
-Vocabulary-aware parsing validates `#clr` payloads and maps them to `ron.Color`. Rendering `ron.Color` or values implementing `github.com/SCKelemen/color.Color` emits canonical `#clr` values.
+Vocabulary-aware parsing validates `#clr` payloads and maps them to `ron.Color`. Rendering `ron.Color` preserves its stored color space and channels. Rendering values implementing `github.com/SCKelemen/color.Color` emits `oklch` or `oklcha` payloads.
 
 | Tag | Meaning | Go type | External library |
 | --- | --- | --- | --- |
-| `#clr` | OKLCH color `[space, lightness, chroma, hue]` | `ron.Color` | `github.com/SCKelemen/color` |
+| `#clr` | Color `[space, channels...]` | `ron.Color` | `github.com/SCKelemen/color` |
 
 ## Type notes
 
-- `#clr` currently supports the canonical `oklch` color space.
-- Payload shape is `["oklch", lightness, chroma, hueDegrees]`.
+- Supported spaces: `rgb`, `rgba`, `hsl`, `hsla`, `hsv`, `hsva`, `hwb`, `hwba`, `lab`, `laba`, `lch`, `lcha`, `oklab`, `oklaba`, `oklch`, `oklcha`, `xyz`, and `xyza`.
+- Non-alpha spaces use three numeric channels.
+- Alpha spaces use four numeric channels with alpha in `[0, 1]`.
 - Numeric channels must be finite JSON numbers.
 - `ron.Color.Value` carries the corresponding `github.com/SCKelemen/color.Color` value for color conversions and manipulation.
-- `ron.Color.Channels` preserves the canonical payload values for lossless RON rendering.
+- `ron.Color.Channels` preserves payload channel values for lossless RON rendering.
