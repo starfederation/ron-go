@@ -24,9 +24,9 @@
       checks = forAllSystems (pkgs: {
         default = pkgs.buildGo126Module {
           pname = "ron-go-tests";
-          version = "0";
+          version = "0.0.3";
           src = self;
-          vendorHash = "sha256-5Gkb6hge2E/5uxcl8oXjjxpzZyUwEi4PY9gPCRJm3bU=";
+          vendorHash = "sha256-1oCcFzFYYNdSOJ3anzUvGO+YNDJ2UtHRuY5UIElRpgg=";
           proxyVendor = true;
 
           preCheck = ''
