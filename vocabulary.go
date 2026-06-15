@@ -21,6 +21,7 @@ func defaultVocabularies() map[string]struct{} {
 		VocabularyNetworkV1: {},
 		VocabularyMathV1:    {},
 		VocabularySpatialV1: {},
+		VocabularyGeoV1:     {},
 	}
 }
 
@@ -31,7 +32,7 @@ func (opts optionState) hasVocabularies() bool {
 func (opts optionState) parseVocabularies(value any) (any, error) {
 	for uri := range opts.vocabularies {
 		switch uri {
-		case VocabularyCoreV1, VocabularyTimeV1, VocabularyNetworkV1, VocabularyMathV1, VocabularySpatialV1:
+		case VocabularyCoreV1, VocabularyTimeV1, VocabularyNetworkV1, VocabularyMathV1, VocabularySpatialV1, VocabularyGeoV1:
 		default:
 			return nil, newError("unsupported vocabulary: " + uri)
 		}
@@ -88,7 +89,7 @@ func (opts optionState) parseVocabularyValue(value any) (any, error) {
 
 func (opts optionState) enabledTypedValue(members []objectMember) (string, any, bool) {
 	for _, member := range members {
-		if opts.isCoreTag(member.Key) || opts.isTimeTag(member.Key) || opts.isNetworkTag(member.Key) || opts.isMathTag(member.Key) || opts.isSpatialTag(member.Key) {
+		if opts.isCoreTag(member.Key) || opts.isTimeTag(member.Key) || opts.isNetworkTag(member.Key) || opts.isMathTag(member.Key) || opts.isSpatialTag(member.Key) || opts.isGeoTag(member.Key) {
 			return member.Key, member.Value, true
 		}
 	}
@@ -111,6 +112,9 @@ func (opts optionState) parseTypedPayload(tag string, payload any) (any, error) 
 	if opts.isSpatialTag(tag) {
 		return opts.parseSpatialPayload(tag, payload)
 	}
+	if opts.isGeoTag(tag) {
+		return opts.parseGeoPayload(tag, payload)
+	}
 	return nil, newError("unsupported typed tag")
 }
 
@@ -127,5 +131,8 @@ func typedTaggedMember(value any) (objectMember, bool) {
 	if member, ok := mathTaggedMember(value); ok {
 		return member, true
 	}
-	return spatialTaggedMember(value)
+	if member, ok := spatialTaggedMember(value); ok {
+		return member, true
+	}
+	return geoTaggedMember(value)
 }
