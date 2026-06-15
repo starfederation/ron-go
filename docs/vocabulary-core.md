@@ -2,7 +2,7 @@
 
 URI: `https://ron.dev/vocab/core/v1`
 
-Enable with:
+Core vocabulary support is enabled by default. It can also be named explicitly in a vocabulary profile:
 
 ```go
 ron.EnableVocabularies(ron.VocabularyCoreV1)

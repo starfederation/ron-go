@@ -9,7 +9,7 @@ import (
 )
 
 func writeValue(buf *bytes.Buffer, value any, indent string, depth int, canonical bool) {
-	if member, ok := coreTaggedMember(value); ok {
+	if member, ok := typedTaggedMember(value); ok {
 		writeTaggedObject(buf, member, indent, depth, canonical)
 		return
 	}
@@ -139,8 +139,8 @@ func shouldInlineObject(members []objectMember, canonical bool) bool {
 	return size <= 80
 }
 
-func renderCoreTaggedValue(value any, canonical bool) (string, bool) {
-	member, ok := coreTaggedMember(value)
+func renderTypedTaggedValue(value any, canonical bool) (string, bool) {
+	member, ok := typedTaggedMember(value)
 	if !ok {
 		return "", false
 	}
@@ -166,7 +166,7 @@ func shouldInlineArray(array []any, canonical bool) bool {
 }
 
 func canInlineValue(value any, canonical bool) bool {
-	if _, ok := coreTaggedMember(value); ok {
+	if _, ok := typedTaggedMember(value); ok {
 		return true
 	}
 
@@ -183,7 +183,7 @@ func canInlineValue(value any, canonical bool) bool {
 }
 
 func renderInlineValue(value any, canonical bool) (string, bool) {
-	if rendered, ok := renderCoreTaggedValue(value, canonical); ok {
+	if rendered, ok := renderTypedTaggedValue(value, canonical); ok {
 		return rendered, true
 	}
 
@@ -254,7 +254,7 @@ func renderInlineValue(value any, canonical bool) (string, bool) {
 }
 
 func renderScalar(value any, canonical bool) string {
-	if rendered, ok := renderCoreTaggedValue(value, canonical); ok {
+	if rendered, ok := renderTypedTaggedValue(value, canonical); ok {
 		return rendered
 	}
 
@@ -409,7 +409,7 @@ func objectMembers(value any, canonical bool) []objectMember {
 }
 
 func writeCompactValue(buf *bytes.Buffer, value any, top, canonical bool) {
-	if member, ok := coreTaggedMember(value); ok {
+	if member, ok := typedTaggedMember(value); ok {
 		buf.WriteByte('{')
 		buf.WriteString(renderString(member.Key, true))
 		if inline, ok := renderInlineValue(member.Value, canonical); ok {
@@ -468,7 +468,9 @@ func writeCompactValue(buf *bytes.Buffer, value any, top, canonical bool) {
 			}
 			buf.WriteString(renderString(member.Key, true))
 			needsSpace := true
-			if member.Value != nil {
+			if _, ok := typedTaggedMember(member.Value); ok {
+				needsSpace = false
+			} else if member.Value != nil {
 				switch value := member.Value.(type) {
 				case string:
 					rendered := renderString(value, false)
