@@ -50,7 +50,7 @@ func writeObject(buf *bytes.Buffer, object any, indent string, depth int, canoni
 		buf.WriteString("{}")
 		return
 	}
-	if len(members) == 1 && isTaggedKey(members[0].Key) {
+	if len(members) == 1 && len(members[0].Key) > 0 && members[0].Key[0] == '#' {
 		writeTaggedObject(buf, members[0], indent, depth, canonical)
 		return
 	}
@@ -137,10 +137,6 @@ func shouldInlineObject(members []objectMember, canonical bool) bool {
 		size += len(renderString(member.Key, true)) + 1 + len(renderScalar(member.Value, canonical))
 	}
 	return size <= 80
-}
-
-func isTaggedKey(key string) bool {
-	return len(key) > 0 && key[0] == '#'
 }
 
 func renderCoreTaggedValue(value any, canonical bool) (string, bool) {

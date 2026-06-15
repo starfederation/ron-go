@@ -4,6 +4,7 @@ import (
 	"net/url"
 	"testing"
 
+	"github.com/cockroachdb/apd/v3"
 	"github.com/google/uuid"
 )
 
@@ -81,7 +82,7 @@ func TestCoreVocabularyParsesNativeValuesFromJSON(t *testing.T) {
 	if got, ok := objectValue(object, "homepage").(*url.URL); !ok || got.String() != "https://example.com/docs?q=ron#intro" {
 		t.Fatalf("homepage type = %T %[1]v", objectValue(object, "homepage"))
 	}
-	if got, ok := objectValue(object, "price").(Decimal); !ok || got != Decimal("123.45") {
+	if got, ok := objectValue(object, "price").(*apd.Decimal); !ok || got.Text('f') != "123.45" {
 		t.Fatalf("price type = %T %[1]v", objectValue(object, "price"))
 	}
 	if got, ok := objectValue(object, "payload").(Bytes); !ok || string(got) != string([]byte{0xde, 0xad, 0xbe, 0xef}) {
@@ -96,6 +97,23 @@ func TestCoreVocabularyParsesNativeValuesFromJSON(t *testing.T) {
 	if got, ok := objectValue(object, "opaque").(OpaqueTag); !ok || got.Payload == nil {
 		t.Fatalf("opaque type = %T %[1]v", objectValue(object, "opaque"))
 	}
+}
+
+func TestCoreVocabularyRendersAPDDecimal(t *testing.T) {
+	var value apd.Decimal
+	if _, _, err := value.SetString("1.230"); err != nil {
+		t.Fatalf("SetString: %v", err)
+	}
+
+	got, err := FromJSON([]byte(`{"price":{"#dec":"1.23"}}`), EnableVocabularies(VocabularyCoreV1))
+	if err != nil {
+		t.Fatalf("FromJSON #dec: %v", err)
+	}
+	assertBytesEqual(t, []byte("price {#dec '1.23'}\n"), got)
+
+	var buf []byte
+	buf = append(buf, renderScalar(&value, true)...)
+	assertBytesEqual(t, []byte("{#dec '1.23'}"), buf)
 }
 
 func TestCoreVocabularyParsesNativeValuesFromRON(t *testing.T) {

@@ -100,7 +100,7 @@ func ToJSONInto(dst *bytes.Buffer, src []byte, options ...Option) ([]byte, error
 		if err != nil {
 			return nil, err
 		}
-		if err := opts.validateVocabularies(value); err != nil {
+		if _, err := opts.parseVocabularies(value); err != nil {
 			return nil, err
 		}
 	}
