@@ -3,6 +3,7 @@ module github.com/starfederation/ron-go
 go 1.26.3
 
 require (
+	github.com/SCKelemen/color v1.0.5
 	github.com/cockroachdb/apd/v3 v3.2.3
 	github.com/google/uuid v1.6.0
 	github.com/paulmach/orb v0.13.0
@@ -10,6 +11,8 @@ require (
 )
 
 require (
+	github.com/SCKelemen/units v1.1.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.10 // indirect
+	golang.org/x/image v0.34.0 // indirect
 	golang.org/x/sys v0.30.0 // indirect
 )

@@ -33,12 +33,13 @@ func loadVocabularyManifest(t *testing.T) (string, vocabularyManifest) {
 func TestSupportedVocabulariesAreEnabledByDefault(t *testing.T) {
 	got, err := FromJSON([]byte(`{
 		"id":{"#uid":"00112233-4455-6677-8899-aabbccddeeff"},
-		"created":{"#utc":"2026-06-13T00:00:00Z"}
+		"created":{"#utc":"2026-06-13T00:00:00Z"},
+		"accent":{"#clr":["oklch",0.7,0.15,230]}
 	}`))
 	if err != nil {
 		t.Fatalf("FromJSON default vocabularies: %v", err)
 	}
-	assertBytesEqual(t, []byte("created {#utc 2026-06-13T00:00:00Z}\nid {#uid 00112233-4455-6677-8899-aabbccddeeff}\n"), got)
+	assertBytesEqual(t, []byte("accent {#clr [oklch 0.7 0.15 230]}\ncreated {#utc 2026-06-13T00:00:00Z}\nid {#uid 00112233-4455-6677-8899-aabbccddeeff}\n"), got)
 
 	if _, err := FromJSON([]byte(`{"bad":{"#dur":"P1M"}}`)); err == nil {
 		t.Fatal("FromJSON accepted invalid default vocabulary payload")

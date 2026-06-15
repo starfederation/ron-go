@@ -18,13 +18,4 @@ Supported vocabularies are enabled by default.
 | [Math](./vocabulary-math.md) | `https://ron.dev/vocab/math/v1` | `ron.Int64`, `ron.Uint64`, `ron.Float64`, vectors, matrices, `ron.Quaternion`, `ron.Euler` | Local `components/math` |
 | [Spatial](./vocabulary-spatial.md) | `https://ron.dev/vocab/spatial/v1` | `ron.LngLatAlt`, `ron.Box2`, `ron.Box3`, `ron.Sphere`, `ron.Plane`, `ron.Ray`, `ron.Line2`, `ron.Line3`, `ron.Triangle`, `ron.Frustum`, `ron.SphericalHarmonics3`, `ron.VoxelSet` | `github.com/paulmach/orb`, local `components/math` |
 | [GeoJSON](./vocabulary-geo.md) | `https://ron.dev/vocab/geo/v1` | `ron.GeoJSON` | Local `components/geo` |
-
-## Planned vocabularies
-
-These vocabularies are defined by the reference repo but are not implemented in ron-go yet:
-
-| Vocabulary | URI | Status |
-| --- | --- | --- |
-| Color | `https://ron.dev/vocab/color/v1` | Planned |
-
-Add one page per implemented vocabulary so users can see the wire tags, Go types, and any external packages used.
+| [Color](./vocabulary-color.md) | `https://ron.dev/vocab/color/v1` | `ron.Color` | `github.com/SCKelemen/color` |
