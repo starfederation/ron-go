@@ -1,6 +1,7 @@
 package ron
 
 import (
+	"slices"
 	"testing"
 
 	colorlib "github.com/SCKelemen/color"
@@ -50,7 +51,7 @@ func TestColorVocabularyParsesNativeValues(t *testing.T) {
 	if !ok {
 		t.Fatalf("accent type = %T %[1]v", objectValue(object, "accent"))
 	}
-	if colorValue.Space != ColorSpaceOKLCH || colorValue.Channels != [3]float64{0.7, 0.15, 230} {
+	if colorValue.Space != ColorSpaceOKLCH || !slices.Equal(colorValue.Channels, []float64{0.7, 0.15, 230}) {
 		t.Fatalf("accent = %#v", colorValue)
 	}
 	if colorValue.Value == nil {
@@ -66,8 +67,9 @@ func TestColorVocabularyRendersNativeValues(t *testing.T) {
 func TestColorVocabularyRejectsInvalidPayloads(t *testing.T) {
 	for _, input := range [][]byte{
 		[]byte(`{"accent":{"#clr":["oklch",0.7,0.15]}}`),
-		[]byte(`{"accent":{"#clr":["rgb",0.7,0.15,230]}}`),
+		[]byte(`{"accent":{"#clr":["cmyk",0.7,0.15,230]}}`),
 		[]byte(`{"accent":{"#clr":["oklch",0.7,0.15,"230"]}}`),
+		[]byte(`{"accent":{"#clr":["rgba",0.7,0.15,0.2,2]}}`),
 	} {
 		if _, err := FromJSON(input, EnableVocabularies(VocabularyColorV1)); err == nil {
 			t.Fatalf("FromJSON succeeded for invalid color vocabulary input: %s", input)
