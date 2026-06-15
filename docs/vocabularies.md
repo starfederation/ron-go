@@ -19,3 +19,4 @@ Supported vocabularies are enabled by default.
 | [Spatial](./vocabulary-spatial.md) | `https://ron.dev/vocab/spatial/v1` | `ron.LngLatAlt`, `ron.Box2`, `ron.Box3`, `ron.Sphere`, `ron.Plane`, `ron.Ray`, `ron.Line2`, `ron.Line3`, `ron.Triangle`, `ron.Frustum`, `ron.SphericalHarmonics3`, `ron.VoxelSet` | `github.com/paulmach/orb`, local `components/math` |
 | [GeoJSON](./vocabulary-geo.md) | `https://ron.dev/vocab/geo/v1` | `ron.GeoJSON` | Local `components/geo` |
 | [Color](./vocabulary-color.md) | `https://ron.dev/vocab/color/v1` | `ron.Color` | `github.com/SCKelemen/color` |
+| [Custom](./vocabulary-custom.md) | Option-scoped | `ron.CustomValue`, application types | None |
