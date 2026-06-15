@@ -55,7 +55,7 @@ func TestGeoVocabularyParsesNativeValue(t *testing.T) {
 		t.Fatalf("parseVocabularies: %v", err)
 	}
 	object := parsed.(orderedObject)
-	if got, ok := objectValue(object, "point").(GeoJSON); !ok || got.Value == nil {
+	if got, ok := objectValue(object, "point").(GeoJSON); !ok || got.Data == nil {
 		t.Fatalf("point type = %T %[1]v", objectValue(object, "point"))
 	}
 }

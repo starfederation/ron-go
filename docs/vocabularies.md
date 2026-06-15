@@ -17,7 +17,7 @@ Supported vocabularies are enabled by default.
 | [Network](./vocabulary-network.md) | `https://ron.dev/vocab/network/v1` | `ron.IPv4`, `ron.IPv6`, `ron.CIDR` | Go stdlib `net/netip` |
 | [Math](./vocabulary-math.md) | `https://ron.dev/vocab/math/v1` | `ron.Int64`, `ron.Uint64`, `ron.Float64`, vectors, matrices, `ron.Quaternion`, `ron.Euler` | Local `components/math` |
 | [Spatial](./vocabulary-spatial.md) | `https://ron.dev/vocab/spatial/v1` | `ron.LngLatAlt`, `ron.Box2`, `ron.Box3`, `ron.Sphere`, `ron.Plane`, `ron.Ray`, `ron.Line2`, `ron.Line3`, `ron.Triangle`, `ron.Frustum`, `ron.SphericalHarmonics3`, `ron.VoxelSet` | `github.com/paulmach/orb`, local `components/math` |
-| [GeoJSON](./vocabulary-geo.md) | `https://ron.dev/vocab/geo/v1` | `ron.GeoJSON` | `github.com/paulmach/orb/geojson` |
+| [GeoJSON](./vocabulary-geo.md) | `https://ron.dev/vocab/geo/v1` | `ron.GeoJSON` | Local `components/geo` |
 
 ## Planned vocabularies
 
