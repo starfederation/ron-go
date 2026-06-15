@@ -84,6 +84,7 @@ func ToJSONInto(dst *bytes.Buffer, src []byte, options ...Option) ([]byte, error
 
 	opts := optionState{
 		formatOptions: formatOptions{isCanonical: true},
+		vocabularies:  defaultVocabularies(),
 	}
 	for _, option := range options {
 		option(&opts)
@@ -178,6 +179,7 @@ func FromJSONInto(dst *bytes.Buffer, src []byte, options ...Option) ([]byte, err
 			isPretty:    true,
 			isCanonical: true,
 		},
+		vocabularies: defaultVocabularies(),
 	}
 	for _, option := range options {
 		option(&opts)

@@ -1,6 +1,7 @@
 package ron
 
 // EnableVocabularies enables validation for supported typed vocabulary URIs.
+// Supported vocabularies are enabled by default; use this for explicit profiles.
 // Unsupported typed values remain ordinary JSON/RON objects unless their vocabulary is enabled.
 func EnableVocabularies(uris ...string) Option {
 	return func(opts *optionState) {
@@ -13,6 +14,13 @@ func EnableVocabularies(uris ...string) Option {
 	}
 }
 
+func defaultVocabularies() map[string]struct{} {
+	return map[string]struct{}{
+		VocabularyCoreV1: {},
+		VocabularyTimeV1: {},
+	}
+}
+
 func (opts optionState) hasVocabularies() bool {
 	return len(opts.vocabularies) > 0
 }
@@ -20,7 +28,7 @@ func (opts optionState) hasVocabularies() bool {
 func (opts optionState) parseVocabularies(value any) (any, error) {
 	for uri := range opts.vocabularies {
 		switch uri {
-		case VocabularyCoreV1:
+		case VocabularyCoreV1, VocabularyTimeV1:
 		default:
 			return nil, newError("unsupported vocabulary: " + uri)
 		}
@@ -45,10 +53,7 @@ func (opts optionState) parseVocabularyValue(value any) (any, error) {
 			if len(members) != 1 {
 				return nil, newError("typed vocabulary object must have exactly one member")
 			}
-			if opts.isCoreTag(tag) {
-				return opts.parseCorePayload(tag, payload)
-			}
-			return nil, newError("unsupported typed tag")
+			return opts.parseTypedPayload(tag, payload)
 		}
 		for key, child := range value {
 			parsed, err := opts.parseVocabularyValue(child)
@@ -63,10 +68,7 @@ func (opts optionState) parseVocabularyValue(value any) (any, error) {
 			if len(value.Members) != 1 {
 				return nil, newError("typed vocabulary object must have exactly one member")
 			}
-			if opts.isCoreTag(tag) {
-				return opts.parseCorePayload(tag, payload)
-			}
-			return nil, newError("unsupported typed tag")
+			return opts.parseTypedPayload(tag, payload)
 		}
 		for i, member := range value.Members {
 			parsed, err := opts.parseVocabularyValue(member.Value)
@@ -83,9 +85,26 @@ func (opts optionState) parseVocabularyValue(value any) (any, error) {
 
 func (opts optionState) enabledTypedValue(members []objectMember) (string, any, bool) {
 	for _, member := range members {
-		if opts.isCoreTag(member.Key) {
+		if opts.isCoreTag(member.Key) || opts.isTimeTag(member.Key) {
 			return member.Key, member.Value, true
 		}
 	}
 	return "", nil, false
+}
+
+func (opts optionState) parseTypedPayload(tag string, payload any) (any, error) {
+	if opts.isCoreTag(tag) {
+		return opts.parseCorePayload(tag, payload)
+	}
+	if opts.isTimeTag(tag) {
+		return opts.parseTimePayload(tag, payload)
+	}
+	return nil, newError("unsupported typed tag")
+}
+
+func typedTaggedMember(value any) (objectMember, bool) {
+	if member, ok := coreTaggedMember(value); ok {
+		return member, true
+	}
+	return timeTaggedMember(value)
 }

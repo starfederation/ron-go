@@ -101,12 +101,11 @@ tx {# tx-48830}
 committed {#time 2026-06-13T00:00:00Z}
 ```
 
-Enable a typed vocabulary to validate matching tagged values while preserving unsupported tags as ordinary RON objects:
+Supported typed vocabularies are enabled by default. Matching tagged values validate and map to native Go values, while unsupported tags remain ordinary RON objects:
 
 ```go
 ronBody, err := ron.FromJSON(
     []byte(`{"id":{"#uid":"00112233-4455-6677-8899-aabbccddeeff"}}`),
-    ron.EnableVocabularies(ron.VocabularyCoreV1),
 )
 ```
 
