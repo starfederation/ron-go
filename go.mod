@@ -6,7 +6,6 @@ require (
 	github.com/SCKelemen/color v1.0.5
 	github.com/cockroachdb/apd/v3 v3.2.3
 	github.com/google/uuid v1.6.0
-	github.com/paulmach/orb v0.13.0
 )
 
 require (

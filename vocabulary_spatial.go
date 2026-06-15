@@ -1,9 +1,6 @@
 package ron
 
-import (
-	"github.com/paulmach/orb"
-	ronmath "github.com/starfederation/ron-go/components/math"
-)
+import ronmath "github.com/starfederation/ron-go/components/math"
 
 const (
 	// VocabularySpatialV1 is the RON spatial typed vocabulary URI.
@@ -12,7 +9,7 @@ const (
 
 // LngLatAlt is a spatial vocabulary #lla value.
 type LngLatAlt struct {
-	Point    orb.Point
+	Point    Vector2
 	Altitude float64
 }
 
@@ -23,7 +20,7 @@ type Spherical = ronmath.Spherical[float64]
 type Cylindrical = ronmath.Cylindrical[float64]
 
 // Box2 is a spatial vocabulary #bx2 value.
-type Box2 = orb.Bound
+type Box2 = ronmath.Box2[float64]
 
 // Box3 is a spatial vocabulary #bx3 value.
 type Box3 = ronmath.Box3[float64]
@@ -39,7 +36,8 @@ type Ray = ronmath.Ray[float64]
 
 // Line2 is a spatial vocabulary #ln2 value.
 type Line2 struct {
-	Line orb.LineString
+	Start Vector2
+	End   Vector2
 }
 
 // Line3 is a spatial vocabulary #ln3 value.
@@ -87,7 +85,7 @@ func (opts optionState) parseSpatialPayload(tag string, payload any) (any, error
 		if err != nil {
 			return nil, err
 		}
-		return LngLatAlt{Point: orb.Point{values[0], values[1]}, Altitude: values[2]}, nil
+		return LngLatAlt{Point: vector2FromSlice(values), Altitude: values[2]}, nil
 	case "#sph":
 		values, err := parseSpatialFloatTuple(payload, 3, "invalid #sph payload")
 		if err != nil {
@@ -105,7 +103,7 @@ func (opts optionState) parseSpatialPayload(tag string, payload any) (any, error
 		if err != nil {
 			return nil, err
 		}
-		return Box2{Min: orb.Point{vectors[0][0], vectors[0][1]}, Max: orb.Point{vectors[1][0], vectors[1][1]}}, nil
+		return Box2{Min: vector2FromSlice(vectors[0]), Max: vector2FromSlice(vectors[1])}, nil
 	case "#bx3":
 		vectors, err := parseSpatialFloatTuples(payload, 2, 3, "invalid #bx3 payload")
 		if err != nil {
@@ -139,7 +137,7 @@ func (opts optionState) parseSpatialPayload(tag string, payload any) (any, error
 		if err != nil {
 			return nil, err
 		}
-		return Line2{Line: orb.LineString{{vectors[0][0], vectors[0][1]}, {vectors[1][0], vectors[1][1]}}}, nil
+		return Line2{Start: vector2FromSlice(vectors[0]), End: vector2FromSlice(vectors[1])}, nil
 	case "#ln3":
 		vectors, err := parseSpatialFloatTuples(payload, 2, 3, "invalid #ln3 payload")
 		if err != nil {
@@ -186,13 +184,13 @@ func (opts optionState) parseSpatialPayload(tag string, payload any) (any, error
 func spatialTaggedMember(value any) (objectMember, bool) {
 	switch value := value.(type) {
 	case LngLatAlt:
-		return objectMember{Key: "#lla", Value: []any{value.Point[0], value.Point[1], value.Altitude}}, true
+		return objectMember{Key: "#lla", Value: []any{value.Point.X, value.Point.Y, value.Altitude}}, true
 	case Spherical:
 		return objectMember{Key: "#sph", Value: []any{value.Radius, value.Phi, value.Theta}}, true
 	case Cylindrical:
 		return objectMember{Key: "#cyl", Value: []any{value.Radius, value.Theta, value.Y}}, true
 	case Box2:
-		return objectMember{Key: "#bx2", Value: []any{[]any{value.Min[0], value.Min[1]}, []any{value.Max[0], value.Max[1]}}}, true
+		return objectMember{Key: "#bx2", Value: []any{anyVector2(value.Min), anyVector2(value.Max)}}, true
 	case Box3:
 		return objectMember{Key: "#bx3", Value: []any{anyVector3(value.Min), anyVector3(value.Max)}}, true
 	case Sphere:
@@ -202,10 +200,7 @@ func spatialTaggedMember(value any) (objectMember, bool) {
 	case Ray:
 		return objectMember{Key: "#ray", Value: []any{anyVector3(value.Origin), anyVector3(value.Dir)}}, true
 	case Line2:
-		if len(value.Line) != 2 {
-			return objectMember{}, false
-		}
-		return objectMember{Key: "#ln2", Value: []any{[]any{value.Line[0][0], value.Line[0][1]}, []any{value.Line[1][0], value.Line[1][1]}}}, true
+		return objectMember{Key: "#ln2", Value: []any{anyVector2(value.Start), anyVector2(value.End)}}, true
 	case Line3:
 		return objectMember{Key: "#ln3", Value: []any{anyVector3(value.Start), anyVector3(value.End)}}, true
 	case Triangle:
@@ -366,8 +361,16 @@ func renderVoxelSet(value VoxelSet) orderedObject {
 	return object
 }
 
+func vector2FromSlice(values []float64) Vector2 {
+	return Vector2{X: values[0], Y: values[1]}
+}
+
 func vector3FromSlice(values []float64) Vector3 {
 	return Vector3{X: values[0], Y: values[1], Z: values[2]}
+}
+
+func anyVector2(value Vector2) []any {
+	return []any{value.X, value.Y}
 }
 
 func anyVector3(value Vector3) []any {
