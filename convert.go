@@ -11,8 +11,11 @@ type Option func(*optionState)
 
 type optionState struct {
 	formatOptions
-	jsonValueMapper jsonValueMapper
-	vocabularies    map[string]struct{}
+	jsonValueMapper       jsonValueMapper
+	vocabularies          map[string]struct{}
+	customVocabularies    map[string]CustomVocabulary
+	customVocabularyOrder []string
+	customTags            map[string]string
 }
 
 type formatOptions struct {
@@ -200,17 +203,17 @@ func FromJSONInto(dst *bytes.Buffer, src []byte, options ...Option) ([]byte, err
 	if opts.isPretty {
 		dst.Grow(len(src) * 2)
 		if object, ok := value.(orderedObject); ok && len(object.Members) > 0 {
-			writeObjectMembers(dst, objectMembers(object, opts.isCanonical), opts.indent, -1, opts.isCanonical)
+			writeObjectMembersWithCustom(dst, objectMembers(object, opts.isCanonical), opts.indent, -1, opts.isCanonical, opts.customRenderersList())
 			dst.WriteByte('\n')
 			return dst.Bytes(), nil
 		}
-		writeValue(dst, value, opts.indent, 0, opts.isCanonical)
+		writeValueWithCustom(dst, value, opts.indent, 0, opts.isCanonical, opts.customRenderersList())
 		dst.WriteByte('\n')
 		return dst.Bytes(), nil
 	}
 
 	dst.Grow(len(src))
-	writeCompactValue(dst, value, true, opts.isCanonical)
+	writeCompactValueWithCustom(dst, value, true, opts.isCanonical, opts.customRenderersList())
 	return dst.Bytes(), nil
 }
 

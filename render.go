@@ -9,8 +9,12 @@ import (
 )
 
 func writeValue(buf *bytes.Buffer, value any, indent string, depth int, canonical bool) {
-	if member, ok := typedTaggedMember(value); ok {
-		writeTaggedObject(buf, member, indent, depth, canonical)
+	writeValueWithCustom(buf, value, indent, depth, canonical, nil)
+}
+
+func writeValueWithCustom(buf *bytes.Buffer, value any, indent string, depth int, canonical bool, renderers []CustomRenderFunc) {
+	if member, ok := typedTaggedMemberWithCustom(value, renderers); ok {
+		writeTaggedObjectWithCustom(buf, member, indent, depth, canonical, renderers)
 		return
 	}
 
@@ -36,61 +40,73 @@ func writeValue(buf *bytes.Buffer, value any, indent string, depth int, canonica
 	case float64:
 		buf.WriteString(strconv.FormatFloat(value, 'g', -1, 64))
 	case []any:
-		writeArray(buf, value, indent, depth, canonical)
+		writeArrayWithCustom(buf, value, indent, depth, canonical, renderers)
 	case multilineArray:
-		writeMultilineArray(buf, []any(value), indent, depth, canonical)
+		writeMultilineArrayWithCustom(buf, []any(value), indent, depth, canonical, renderers)
 	case map[string]any, orderedObject:
-		writeObject(buf, value, indent, depth, canonical)
+		writeObjectWithCustom(buf, value, indent, depth, canonical, renderers)
 	default:
 		panic("unsupported value")
 	}
 }
 
 func writeObject(buf *bytes.Buffer, object any, indent string, depth int, canonical bool) {
+	writeObjectWithCustom(buf, object, indent, depth, canonical, nil)
+}
+
+func writeObjectWithCustom(buf *bytes.Buffer, object any, indent string, depth int, canonical bool, renderers []CustomRenderFunc) {
 	members := objectMembers(object, canonical)
 	if len(members) == 0 {
 		buf.WriteString("{}")
 		return
 	}
 	if len(members) == 1 && len(members[0].Key) > 0 && members[0].Key[0] == '#' {
-		writeTaggedObject(buf, members[0], indent, depth, canonical)
+		writeTaggedObjectWithCustom(buf, members[0], indent, depth, canonical, renderers)
 		return
 	}
-	if shouldInlineObject(members, canonical) {
+	if shouldInlineObjectWithCustom(members, canonical, renderers) {
 		buf.WriteByte('{')
 		for _, member := range members {
 			buf.WriteString(renderString(member.Key, true))
 			buf.WriteByte(' ')
-			writeValue(buf, member.Value, indent, depth, canonical)
+			writeValueWithCustom(buf, member.Value, indent, depth, canonical, renderers)
 		}
 		buf.WriteByte('}')
 		return
 	}
 	buf.WriteString("{\n")
-	writeObjectMembers(buf, members, indent, depth, canonical)
+	writeObjectMembersWithCustom(buf, members, indent, depth, canonical, renderers)
 	buf.WriteByte('\n')
 	writeIndent(buf, indent, depth)
 	buf.WriteByte('}')
 }
 
 func writeTaggedObject(buf *bytes.Buffer, member objectMember, indent string, depth int, canonical bool) {
+	writeTaggedObjectWithCustom(buf, member, indent, depth, canonical, nil)
+}
+
+func writeTaggedObjectWithCustom(buf *bytes.Buffer, member objectMember, indent string, depth int, canonical bool, renderers []CustomRenderFunc) {
 	buf.WriteByte('{')
 	buf.WriteString(renderString(member.Key, true))
 	buf.WriteByte(' ')
-	if inline, ok := renderInlineValue(member.Value, canonical); ok && len(inline)+len(member.Key)+3 <= 80 {
+	if inline, ok := renderInlineValueWithCustom(member.Value, canonical, renderers); ok && len(inline)+len(member.Key)+3 <= 80 {
 		buf.WriteString(inline)
 	} else {
-		writeValue(buf, member.Value, indent, depth, canonical)
+		writeValueWithCustom(buf, member.Value, indent, depth, canonical, renderers)
 	}
 	buf.WriteByte('}')
 }
 
 func writeObjectMembers(buf *bytes.Buffer, members []objectMember, indent string, depth int, canonical bool) {
+	writeObjectMembersWithCustom(buf, members, indent, depth, canonical, nil)
+}
+
+func writeObjectMembersWithCustom(buf *bytes.Buffer, members []objectMember, indent string, depth int, canonical bool, renderers []CustomRenderFunc) {
 	for i, member := range members {
 		writeIndent(buf, indent, depth+1)
 		buf.WriteString(renderString(member.Key, true))
 		buf.WriteByte(' ')
-		writeValue(buf, member.Value, indent, depth+1, canonical)
+		writeValueWithCustom(buf, member.Value, indent, depth+1, canonical, renderers)
 		if i+1 < len(members) {
 			buf.WriteByte('\n')
 		}
@@ -100,17 +116,21 @@ func writeObjectMembers(buf *bytes.Buffer, members []objectMember, indent string
 type multilineArray []any
 
 func writeArray(buf *bytes.Buffer, array []any, indent string, depth int, canonical bool) {
+	writeArrayWithCustom(buf, array, indent, depth, canonical, nil)
+}
+
+func writeArrayWithCustom(buf *bytes.Buffer, array []any, indent string, depth int, canonical bool, renderers []CustomRenderFunc) {
 	if len(array) == 0 {
 		buf.WriteString("[]")
 		return
 	}
-	if shouldInlineArray(array, canonical) {
+	if shouldInlineArrayWithCustom(array, canonical, renderers) {
 		buf.WriteByte('[')
 		for i, value := range array {
 			if i > 0 {
 				buf.WriteByte(' ')
 			}
-			writeValue(buf, value, indent, depth, canonical)
+			writeValueWithCustom(buf, value, indent, depth, canonical, renderers)
 		}
 		buf.WriteByte(']')
 		return
@@ -118,7 +138,7 @@ func writeArray(buf *bytes.Buffer, array []any, indent string, depth int, canoni
 	buf.WriteString("[\n")
 	for i, value := range array {
 		writeIndent(buf, indent, depth+1)
-		writeValue(buf, value, indent, depth+1, canonical)
+		writeValueWithCustom(buf, value, indent, depth+1, canonical, renderers)
 		if i+1 < len(array) {
 			buf.WriteByte('\n')
 		}
@@ -129,6 +149,10 @@ func writeArray(buf *bytes.Buffer, array []any, indent string, depth int, canoni
 }
 
 func writeMultilineArray(buf *bytes.Buffer, array []any, indent string, depth int, canonical bool) {
+	writeMultilineArrayWithCustom(buf, array, indent, depth, canonical, nil)
+}
+
+func writeMultilineArrayWithCustom(buf *bytes.Buffer, array []any, indent string, depth int, canonical bool, renderers []CustomRenderFunc) {
 	if len(array) == 0 {
 		buf.WriteString("[]")
 		return
@@ -136,7 +160,7 @@ func writeMultilineArray(buf *bytes.Buffer, array []any, indent string, depth in
 	buf.WriteString("[\n")
 	for i, value := range array {
 		writeIndent(buf, indent, depth+1)
-		writeValue(buf, value, indent, depth+1, canonical)
+		writeValueWithCustom(buf, value, indent, depth+1, canonical, renderers)
 		if i+1 < len(array) {
 			buf.WriteByte('\n')
 		}
@@ -147,26 +171,34 @@ func writeMultilineArray(buf *bytes.Buffer, array []any, indent string, depth in
 }
 
 func shouldInlineObject(members []objectMember, canonical bool) bool {
+	return shouldInlineObjectWithCustom(members, canonical, nil)
+}
+
+func shouldInlineObjectWithCustom(members []objectMember, canonical bool, renderers []CustomRenderFunc) bool {
 	if len(members) != 1 {
 		return false
 	}
 
 	size := 2
 	for _, member := range members {
-		if !canInlineValue(member.Value, canonical) {
+		if !canInlineValueWithCustom(member.Value, canonical, renderers) {
 			return false
 		}
-		size += len(renderString(member.Key, true)) + 1 + len(renderScalar(member.Value, canonical))
+		size += len(renderString(member.Key, true)) + 1 + len(renderScalarWithCustom(member.Value, canonical, renderers))
 	}
 	return size <= 80
 }
 
 func renderTypedTaggedValue(value any, canonical bool) (string, bool) {
-	member, ok := typedTaggedMember(value)
+	return renderTypedTaggedValueWithCustom(value, canonical, nil)
+}
+
+func renderTypedTaggedValueWithCustom(value any, canonical bool, renderers []CustomRenderFunc) (string, bool) {
+	member, ok := typedTaggedMemberWithCustom(value, renderers)
 	if !ok {
 		return "", false
 	}
-	payload, ok := renderInlineValue(member.Value, canonical)
+	payload, ok := renderInlineValueWithCustom(member.Value, canonical, renderers)
 	if !ok {
 		return "", false
 	}
@@ -174,21 +206,29 @@ func renderTypedTaggedValue(value any, canonical bool) (string, bool) {
 }
 
 func shouldInlineArray(array []any, canonical bool) bool {
+	return shouldInlineArrayWithCustom(array, canonical, nil)
+}
+
+func shouldInlineArrayWithCustom(array []any, canonical bool, renderers []CustomRenderFunc) bool {
 	size := 2
 	for i, value := range array {
-		if !canInlineValue(value, canonical) {
+		if !canInlineValueWithCustom(value, canonical, renderers) {
 			return false
 		}
 		if i > 0 {
 			size++
 		}
-		size += len(renderScalar(value, canonical))
+		size += len(renderScalarWithCustom(value, canonical, renderers))
 	}
 	return size <= 80
 }
 
 func canInlineValue(value any, canonical bool) bool {
-	if _, ok := typedTaggedMember(value); ok {
+	return canInlineValueWithCustom(value, canonical, nil)
+}
+
+func canInlineValueWithCustom(value any, canonical bool, renderers []CustomRenderFunc) bool {
+	if _, ok := typedTaggedMemberWithCustom(value, renderers); ok {
 		return true
 	}
 
@@ -196,27 +236,31 @@ func canInlineValue(value any, canonical bool) bool {
 	case nil, bool, string, ronNumber, json.Number, int64, uint64, float64:
 		return true
 	case []any:
-		return shouldInlineArray(value, canonical)
+		return shouldInlineArrayWithCustom(value, canonical, renderers)
 	case map[string]any, orderedObject:
-		return shouldInlineObject(objectMembers(value, canonical), canonical)
+		return shouldInlineObjectWithCustom(objectMembers(value, canonical), canonical, renderers)
 	default:
 		return false
 	}
 }
 
 func renderInlineValue(value any, canonical bool) (string, bool) {
-	if rendered, ok := renderTypedTaggedValue(value, canonical); ok {
+	return renderInlineValueWithCustom(value, canonical, nil)
+}
+
+func renderInlineValueWithCustom(value any, canonical bool, renderers []CustomRenderFunc) (string, bool) {
+	if rendered, ok := renderTypedTaggedValueWithCustom(value, canonical, renderers); ok {
 		return rendered, true
 	}
 
 	switch value := value.(type) {
 	case nil, bool, string, ronNumber, json.Number, int64, uint64, float64:
-		return renderScalar(value, canonical), true
+		return renderScalarWithCustom(value, canonical, renderers), true
 	case []any:
 		parts := make([]string, len(value))
 		size := 2
 		for i, child := range value {
-			part, ok := renderInlineValue(child, canonical)
+			part, ok := renderInlineValueWithCustom(child, canonical, renderers)
 			if !ok {
 				return "", false
 			}
@@ -245,7 +289,7 @@ func renderInlineValue(value any, canonical bool) (string, bool) {
 		parts := make([]string, len(members))
 		size := 2
 		for i, member := range members {
-			part, ok := renderInlineValue(member.Value, canonical)
+			part, ok := renderInlineValueWithCustom(member.Value, canonical, renderers)
 			if !ok {
 				return "", false
 			}
@@ -276,7 +320,11 @@ func renderInlineValue(value any, canonical bool) (string, bool) {
 }
 
 func renderScalar(value any, canonical bool) string {
-	if rendered, ok := renderTypedTaggedValue(value, canonical); ok {
+	return renderScalarWithCustom(value, canonical, nil)
+}
+
+func renderScalarWithCustom(value any, canonical bool, renderers []CustomRenderFunc) string {
+	if rendered, ok := renderTypedTaggedValueWithCustom(value, canonical, renderers); ok {
 		return rendered
 	}
 
@@ -302,15 +350,15 @@ func renderScalar(value any, canonical bool) string {
 		return strconv.FormatFloat(value, 'g', -1, 64)
 	case []any:
 		var buf bytes.Buffer
-		writeArray(&buf, value, "", 0, canonical)
+		writeArrayWithCustom(&buf, value, "", 0, canonical, renderers)
 		return buf.String()
 	case multilineArray:
 		var buf bytes.Buffer
-		writeMultilineArray(&buf, []any(value), "", 0, canonical)
+		writeMultilineArrayWithCustom(&buf, []any(value), "", 0, canonical, renderers)
 		return buf.String()
 	case map[string]any, orderedObject:
 		var buf bytes.Buffer
-		writeObject(&buf, value, "", 0, canonical)
+		writeObjectWithCustom(&buf, value, "", 0, canonical, renderers)
 		return buf.String()
 	default:
 		panic("unsupported value")
@@ -435,14 +483,18 @@ func objectMembers(value any, canonical bool) []objectMember {
 }
 
 func writeCompactValue(buf *bytes.Buffer, value any, top, canonical bool) {
-	if member, ok := typedTaggedMember(value); ok {
+	writeCompactValueWithCustom(buf, value, top, canonical, nil)
+}
+
+func writeCompactValueWithCustom(buf *bytes.Buffer, value any, top, canonical bool, renderers []CustomRenderFunc) {
+	if member, ok := typedTaggedMemberWithCustom(value, renderers); ok {
 		buf.WriteByte('{')
 		buf.WriteString(renderString(member.Key, true))
-		if inline, ok := renderInlineValue(member.Value, canonical); ok {
+		if inline, ok := renderInlineValueWithCustom(member.Value, canonical, renderers); ok {
 			buf.WriteByte(' ')
 			buf.WriteString(inline)
 		} else {
-			writeCompactValue(buf, member.Value, false, canonical)
+			writeCompactValueWithCustom(buf, member.Value, false, canonical, renderers)
 		}
 		buf.WriteByte('}')
 		return
@@ -475,7 +527,7 @@ func writeCompactValue(buf *bytes.Buffer, value any, top, canonical bool) {
 			if i > 0 {
 				buf.WriteByte(' ')
 			}
-			writeCompactValue(buf, value, false, canonical)
+			writeCompactValueWithCustom(buf, value, false, canonical, renderers)
 		}
 		buf.WriteByte(']')
 	case []any:
@@ -484,7 +536,7 @@ func writeCompactValue(buf *bytes.Buffer, value any, top, canonical bool) {
 			if i > 0 {
 				buf.WriteByte(' ')
 			}
-			writeCompactValue(buf, value, false, canonical)
+			writeCompactValueWithCustom(buf, value, false, canonical, renderers)
 		}
 		buf.WriteByte(']')
 	case map[string]any, orderedObject:
@@ -503,7 +555,7 @@ func writeCompactValue(buf *bytes.Buffer, value any, top, canonical bool) {
 			}
 			buf.WriteString(renderString(member.Key, true))
 			needsSpace := true
-			if _, ok := typedTaggedMember(member.Value); ok {
+			if _, ok := typedTaggedMemberWithCustom(member.Value, renderers); ok {
 				needsSpace = false
 			} else if member.Value != nil {
 				switch value := member.Value.(type) {
@@ -517,7 +569,7 @@ func writeCompactValue(buf *bytes.Buffer, value any, top, canonical bool) {
 			if needsSpace {
 				buf.WriteByte(' ')
 			}
-			writeCompactValue(buf, member.Value, false, canonical)
+			writeCompactValueWithCustom(buf, member.Value, false, canonical, renderers)
 		}
 		if !top {
 			buf.WriteByte('}')
