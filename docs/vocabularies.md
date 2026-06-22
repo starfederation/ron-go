@@ -14,7 +14,7 @@ Use `ValidateVocabularyProfile` to reject profiles that require unknown or unsup
 
 | Vocabulary | URI | Go types | External libraries |
 | --- | --- | --- | --- |
-| [Core](./vocabulary-core.md) | `https://ron.dev/vocab/core/v1` | `ron.UUID`, `*url.URL`, `*ron.Decimal`, `ron.Bytes`, `ron.SHA256`, `ron.EntityRef`, `ron.OpaqueTag` | `github.com/google/uuid`, `github.com/cockroachdb/apd/v3` |
+| [Core](./vocabulary-core.md) | `https://ron.dev/vocab/core/v1` | `ron.UUID`, `*url.URL`, `ron.RegExp`, `*ron.Decimal`, `ron.Bytes`, `ron.SHA256`, `ron.EntityRef`, `ron.OpaqueTag` | `github.com/google/uuid`, `github.com/coregx/coregex`, `github.com/cockroachdb/apd/v3` |
 | [Time](./vocabulary-time.md) | `https://ron.dev/vocab/time/v1` | `ron.Instant`, `ron.Duration` | Go stdlib `time` |
 | [Network](./vocabulary-network.md) | `https://ron.dev/vocab/network/v1` | `ron.IPv4`, `ron.IPv6`, `ron.CIDR` | Go stdlib `net/netip` |
 | [Math](./vocabulary-math.md) | `https://ron.dev/vocab/math/v1` | `ron.Int64`, `ron.Uint64`, `ron.Float64`, vectors, matrices, `ron.Quaternion`, `ron.Euler` | Local `components/math` |

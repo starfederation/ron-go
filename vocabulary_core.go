@@ -44,7 +44,7 @@ func (opts optionState) isCoreTag(tag string) bool {
 		return false
 	}
 	switch tag {
-	case "#uid", "#url", "#dec", "#b64", "#sha256", "#", "#tag":
+	case "#uid", "#url", "#rx", "#dec", "#b64", "#sha256", "#", "#tag":
 		return true
 	default:
 		return false
@@ -73,6 +73,8 @@ func (opts optionState) parseCorePayload(tag string, payload any) (any, error) {
 			return nil, newError("invalid #url payload")
 		}
 		return parsed, nil
+	case "#rx":
+		return parseRegExpPayload(payload)
 	case "#dec":
 		value, ok := payload.(string)
 		if !ok || value == "" {
@@ -220,6 +222,13 @@ func coreTaggedMember(value any) (objectMember, bool) {
 			Key:   "#url",
 			Value: value.String(),
 		}, true
+	case RegExp:
+		return regExpTaggedMember(value), true
+	case *RegExp:
+		if value == nil {
+			return objectMember{}, false
+		}
+		return regExpTaggedMember(*value), true
 	case Decimal:
 		return objectMember{
 			Key:   "#dec",

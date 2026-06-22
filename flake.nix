@@ -26,7 +26,7 @@
           pname = "ron-go-tests";
           version = "0.0.3";
           src = self;
-          vendorHash = "sha256-1oCcFzFYYNdSOJ3anzUvGO+YNDJ2UtHRuY5UIElRpgg=";
+          vendorHash = "sha256-Q9o76rYrQauzcyHUEtPbfuSWtzG5sMu0zYhaQ7I03hI=";
           proxyVendor = true;
 
           preCheck = ''
