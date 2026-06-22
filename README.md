@@ -109,7 +109,7 @@ ronBody, err := ron.FromJSON(
 )
 ```
 
-See [typed vocabularies](./docs/vocabularies.md) for supported vocabulary pages, Go type mappings, and external libraries. [`VocabularyCoreV1`](./docs/vocabulary-core.md) supports `#uid`, `#url`, `#dec`, `#b64`, `#sha256`, `#`, and `#tag`.
+See [typed vocabularies](./docs/vocabularies.md) for supported vocabulary pages, Go type mappings, and external libraries. [`VocabularyCoreV1`](./docs/vocabulary-core.md) supports `#uid`, `#url`, `#rx`, `#dec`, `#b64`, `#sha256`, `#`, and `#tag`.
 
 ## Conformance
 

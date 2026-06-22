@@ -60,6 +60,7 @@ func TestCoreVocabularyParsesNativeValuesFromJSON(t *testing.T) {
 	value, err := decodeJSON([]byte(`{
 		"id":{"#uid":"00112233-4455-6677-8899-aabbccddeeff"},
 		"homepage":{"#url":"https://example.com/docs?q=ron#intro"},
+		"regex":{"#rx":["^foo\\d+$","i"]},
 		"price":{"#dec":"123.45"},
 		"payload":{"#b64":"3q2-7w"},
 		"emptyHash":{"#sha256":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},
@@ -81,6 +82,9 @@ func TestCoreVocabularyParsesNativeValuesFromJSON(t *testing.T) {
 	}
 	if got, ok := objectValue(object, "homepage").(*url.URL); !ok || got.String() != "https://example.com/docs?q=ron#intro" {
 		t.Fatalf("homepage type = %T %[1]v", objectValue(object, "homepage"))
+	}
+	if got, ok := objectValue(object, "regex").(RegExp); !ok || got.Source != "^foo\\d+$" || got.Flags != "i" || !got.MatchString("FOO123") {
+		t.Fatalf("regex type = %T %[1]v", objectValue(object, "regex"))
 	}
 	if got, ok := objectValue(object, "price").(*apd.Decimal); !ok || got.Text('f') != "123.45" {
 		t.Fatalf("price type = %T %[1]v", objectValue(object, "price"))
@@ -117,7 +121,7 @@ func TestCoreVocabularyRendersAPDDecimal(t *testing.T) {
 }
 
 func TestCoreVocabularyParsesNativeValuesFromRON(t *testing.T) {
-	value, err := parse([]byte(`id {#uid 00112233-4455-6677-8899-aabbccddeeff}`))
+	value, err := parse([]byte(`id {#uid 00112233-4455-6677-8899-aabbccddeeff} regex {#rx [(?<word>\w+) m]}`))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -129,6 +133,27 @@ func TestCoreVocabularyParsesNativeValuesFromRON(t *testing.T) {
 	object := parsed.(map[string]any)
 	if got, ok := object["id"].(uuid.UUID); !ok || got.String() != "00112233-4455-6677-8899-aabbccddeeff" {
 		t.Fatalf("id type = %T %[1]v", object["id"])
+	}
+	if got, ok := object["regex"].(RegExp); !ok || got.Source != "(?<word>\\w+)" || got.Flags != "m" || !got.MatchString("word") {
+		t.Fatalf("regex type = %T %[1]v", object["regex"])
+	}
+}
+
+func TestCoreVocabularyRegExpConvertsJSSyntax(t *testing.T) {
+	value, err := ParseRegExp(`^\u0041[\b]\cJ$`, "is")
+	if err != nil {
+		t.Fatalf("ParseRegExp: %v", err)
+	}
+
+	pattern, err := value.GoPattern()
+	if err != nil {
+		t.Fatalf("GoPattern: %v", err)
+	}
+	if pattern != `(?is:^\x{0041}[\x{08}]\x{0a}$)` {
+		t.Fatalf("GoPattern = %q", pattern)
+	}
+	if !value.MatchString("a\b\n") {
+		t.Fatal("converted regexp did not match")
 	}
 }
 
