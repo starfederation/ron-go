@@ -115,7 +115,7 @@ func ToJSONInto(dst *bytes.Buffer, src []byte, options ...Option) ([]byte, error
 		}
 	}
 
-	scratch := getJSONScratchState()
+	scratch := jsonScratchPool.Get().(*jsonScratchState)
 	p := parser{
 		src:               src,
 		jsonScratch:       scratch.buffers,
@@ -124,7 +124,21 @@ func ToJSONInto(dst *bytes.Buffer, src []byte, options ...Option) ([]byte, error
 	defer func() {
 		scratch.buffers = p.jsonScratch
 		scratch.members = p.jsonMemberScratch
-		putJSONScratchState(scratch)
+		for i := range scratch.buffers {
+			if scratch.buffers[i].Cap() > 1<<20 {
+				scratch.buffers[i] = bytes.Buffer{}
+			} else {
+				scratch.buffers[i].Reset()
+			}
+		}
+		for i := range scratch.members {
+			if cap(scratch.members[i]) > 1024 {
+				scratch.members[i] = nil
+			} else {
+				scratch.members[i] = scratch.members[i][:0]
+			}
+		}
+		jsonScratchPool.Put(scratch)
 	}()
 	p.skipSpace()
 	if p.pos < len(p.src) && p.src[p.pos] != '{' && p.src[p.pos] != '[' {

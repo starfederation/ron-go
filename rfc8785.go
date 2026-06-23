@@ -302,6 +302,10 @@ func sortObjectMembers(members []objectMember) {
 }
 
 func rfc8785StringLess(left, right string) bool {
+	if asciiString(left) && asciiString(right) {
+		return asciiStringLess(left, right)
+	}
+
 	leftIter := utf16StringIterator{text: left}
 	rightIter := utf16StringIterator{text: right}
 	for {
@@ -314,6 +318,24 @@ func rfc8785StringLess(left, right string) bool {
 			return leftCode < rightCode
 		}
 	}
+}
+
+func asciiStringLess(left, right string) bool {
+	for i := 0; i < len(left) && i < len(right); i++ {
+		if left[i] != right[i] {
+			return left[i] < right[i]
+		}
+	}
+	return len(left) < len(right)
+}
+
+func asciiString(value string) bool {
+	for i := 0; i < len(value); i++ {
+		if value[i] >= utf8.RuneSelf {
+			return false
+		}
+	}
+	return true
 }
 
 type utf16StringIterator struct {

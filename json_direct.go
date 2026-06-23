@@ -11,6 +11,7 @@ type jsonMember struct {
 	Key        string
 	ValueStart int
 	ValueEnd   int
+	KeyASCII   bool
 }
 
 type jsonScratchState struct {
@@ -24,28 +25,6 @@ var jsonScratchPool = sync.Pool{
 	},
 }
 
-func getJSONScratchState() *jsonScratchState {
-	return jsonScratchPool.Get().(*jsonScratchState)
-}
-
-func putJSONScratchState(state *jsonScratchState) {
-	for i := range state.buffers {
-		if state.buffers[i].Cap() > 1<<20 {
-			state.buffers[i] = bytes.Buffer{}
-		} else {
-			state.buffers[i].Reset()
-		}
-	}
-	for i := range state.members {
-		if cap(state.members[i]) > 1024 {
-			state.members[i] = nil
-		} else {
-			state.members[i] = state.members[i][:0]
-		}
-	}
-	jsonScratchPool.Put(state)
-}
-
 type jsonMemberSorter []jsonMember
 
 func (s jsonMemberSorter) Len() int {
@@ -53,6 +32,9 @@ func (s jsonMemberSorter) Len() int {
 }
 
 func (s jsonMemberSorter) Less(i, j int) bool {
+	if s[i].KeyASCII && s[j].KeyASCII {
+		return asciiStringLess(s[i].Key, s[j].Key)
+	}
 	return rfc8785StringLess(s[i].Key, s[j].Key)
 }
 
@@ -96,15 +78,15 @@ func (p *parser) releaseJSONMembers(idx int, members []jsonMember) {
 func writeJSONQuoted(buf *bytes.Buffer, value string) {
 	const hex = "0123456789abcdef"
 
-	asciiSafe := true
+	jsonSafeASCII := true
 	for i := 0; i < len(value); i++ {
 		b := value[i]
 		if b < 0x20 || b == '\\' || b == '"' || b >= utf8.RuneSelf {
-			asciiSafe = false
+			jsonSafeASCII = false
 			break
 		}
 	}
-	if asciiSafe {
+	if jsonSafeASCII {
 		buf.WriteByte('"')
 		buf.WriteString(value)
 		buf.WriteByte('"')
@@ -289,7 +271,20 @@ func (p *parser) writeJSONValueCurrent(buf *bytes.Buffer, prefix, indent string,
 	case looksLikeNumberBytes(token):
 		buf.Write(token)
 	default:
-		writeJSONQuoted(buf, bytesToString(token))
+		jsonSafeASCII := true
+		for _, b := range token {
+			if b < 0x20 || b == '\\' || b == '"' || b >= utf8.RuneSelf {
+				jsonSafeASCII = false
+				break
+			}
+		}
+		if jsonSafeASCII {
+			buf.WriteByte('"')
+			buf.Write(token)
+			buf.WriteByte('"')
+		} else {
+			writeJSONQuoted(buf, bytesToString(token))
+		}
 	}
 	return nil
 }
@@ -362,8 +357,18 @@ func (m *jsonMembers) Set(key string, valueStart, valueEnd int) {
 			}
 		}
 	}
-	if len(m.Values) > 0 && !rfc8785StringLess(m.Values[len(m.Values)-1].Key, key) {
-		m.NeedsSort = true
+	keyASCII := asciiString(key)
+	if len(m.Values) > 0 {
+		previous := m.Values[len(m.Values)-1]
+		ordered := false
+		if previous.KeyASCII && keyASCII {
+			ordered = asciiStringLess(previous.Key, key)
+		} else {
+			ordered = rfc8785StringLess(previous.Key, key)
+		}
+		if !ordered {
+			m.NeedsSort = true
+		}
 	}
 	if m.Index != nil {
 		m.Index[key] = len(m.Values)
@@ -372,6 +377,7 @@ func (m *jsonMembers) Set(key string, valueStart, valueEnd int) {
 		Key:        key,
 		ValueStart: valueStart,
 		ValueEnd:   valueEnd,
+		KeyASCII:   keyASCII,
 	})
 }
 
