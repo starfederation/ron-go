@@ -74,7 +74,7 @@ type Matrix3 = ronmath.Matrix3[float64]
 type Matrix4 = ronmath.Matrix4[float64]
 
 func (opts optionState) isMathTag(tag string) bool {
-	if _, ok := opts.vocabularies[VocabularyMathV1]; !ok {
+	if !opts.vocabularyEnabled(vocabularyMath, VocabularyMathV1) {
 		return false
 	}
 	switch tag {

@@ -12,6 +12,7 @@ type Option func(*optionState)
 type optionState struct {
 	formatOptions
 	jsonValueMapper       jsonValueMapper
+	vocabularyMask        vocabularySet
 	vocabularies          map[string]struct{}
 	customVocabularies    map[string]CustomVocabulary
 	customVocabularyOrder []string
@@ -86,8 +87,8 @@ func ToJSONInto(dst *bytes.Buffer, src []byte, options ...Option) ([]byte, error
 	}
 
 	opts := optionState{
-		formatOptions: formatOptions{isCanonical: true},
-		vocabularies:  defaultVocabularies(),
+		formatOptions:  formatOptions{isCanonical: true},
+		vocabularyMask: defaultVocabularySet,
 	}
 	for _, option := range options {
 		option(&opts)
@@ -135,7 +136,7 @@ func ToJSONInto(dst *bytes.Buffer, src []byte, options ...Option) ([]byte, error
 		for {
 			p.skipSpace()
 			if p.pos == len(p.src) {
-				if err := p.writeJSONObjectMembers(dst, members.Values, values.Bytes(), opts.prefix, opts.indent, 0, opts.isCanonical); err != nil {
+				if err := p.writeJSONObjectMembers(dst, members.Values, values.Bytes(), opts.prefix, opts.indent, 0, opts.isCanonical && members.NeedsSort); err != nil {
 					p.releaseJSONScratch()
 					p.releaseJSONMembers(memberScratch, members.Values)
 					return nil, err
@@ -212,7 +213,7 @@ func FromJSONInto(dst *bytes.Buffer, src []byte, options ...Option) ([]byte, err
 			isPretty:    true,
 			isCanonical: true,
 		},
-		vocabularies: defaultVocabularies(),
+		vocabularyMask: defaultVocabularySet,
 	}
 	for _, option := range options {
 		option(&opts)

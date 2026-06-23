@@ -66,7 +66,7 @@ func (c Color) OKLCH() *colorlib.OKLCH {
 }
 
 func (opts optionState) isColorTag(tag string) bool {
-	if _, ok := opts.vocabularies[VocabularyColorV1]; !ok {
+	if !opts.vocabularyEnabled(vocabularyColor, VocabularyColorV1) {
 		return false
 	}
 	switch tag {

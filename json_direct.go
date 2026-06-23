@@ -96,6 +96,21 @@ func (p *parser) releaseJSONMembers(idx int, members []jsonMember) {
 func writeJSONQuoted(buf *bytes.Buffer, value string) {
 	const hex = "0123456789abcdef"
 
+	asciiSafe := true
+	for i := 0; i < len(value); i++ {
+		b := value[i]
+		if b < 0x20 || b == '\\' || b == '"' || b >= utf8.RuneSelf {
+			asciiSafe = false
+			break
+		}
+	}
+	if asciiSafe {
+		buf.WriteByte('"')
+		buf.WriteString(value)
+		buf.WriteByte('"')
+		return
+	}
+
 	buf.WriteByte('"')
 	start := 0
 	for i := 0; i < len(value); {
@@ -164,7 +179,7 @@ func (p *parser) writeJSONValueCurrent(buf *bytes.Buffer, prefix, indent string,
 			}
 			if p.src[p.pos] == '}' {
 				p.pos++
-				err := p.writeJSONObjectMembers(buf, members.Values, values.Bytes(), prefix, indent, depth, canonical)
+				err := p.writeJSONObjectMembers(buf, members.Values, values.Bytes(), prefix, indent, depth, canonical && members.NeedsSort)
 				p.releaseJSONScratch()
 				p.releaseJSONMembers(memberScratch, members.Values)
 				return err
@@ -279,12 +294,12 @@ func (p *parser) writeJSONValueCurrent(buf *bytes.Buffer, prefix, indent string,
 	return nil
 }
 
-func (p *parser) writeJSONObjectMembers(buf *bytes.Buffer, members []jsonMember, values []byte, prefix, indent string, depth int, canonical bool) error {
+func (p *parser) writeJSONObjectMembers(buf *bytes.Buffer, members []jsonMember, values []byte, prefix, indent string, depth int, sortMembers bool) error {
 	if len(members) == 0 {
 		buf.WriteString("{}")
 		return nil
 	}
-	if canonical {
+	if sortMembers {
 		sort.Sort(jsonMemberSorter(members))
 	}
 	buf.WriteByte('{')
@@ -317,8 +332,9 @@ func (p *parser) writeJSONObjectMembers(buf *bytes.Buffer, members []jsonMember,
 }
 
 type jsonMembers struct {
-	Values []jsonMember
-	Index  map[string]int
+	Values    []jsonMember
+	Index     map[string]int
+	NeedsSort bool
 }
 
 func (m *jsonMembers) Set(key string, valueStart, valueEnd int) {
@@ -345,6 +361,9 @@ func (m *jsonMembers) Set(key string, valueStart, valueEnd int) {
 				m.Index[member.Key] = i
 			}
 		}
+	}
+	if len(m.Values) > 0 && !rfc8785StringLess(m.Values[len(m.Values)-1].Key, key) {
+		m.NeedsSort = true
 	}
 	if m.Index != nil {
 		m.Index[key] = len(m.Values)

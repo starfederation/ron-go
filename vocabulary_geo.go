@@ -16,7 +16,7 @@ const (
 type GeoJSON = rongeo.Value
 
 func (opts optionState) isGeoTag(tag string) bool {
-	if _, ok := opts.vocabularies[VocabularyGeoV1]; !ok {
+	if !opts.vocabularyEnabled(vocabularyGeo, VocabularyGeoV1) {
 		return false
 	}
 	return tag == "#geo"

@@ -17,7 +17,7 @@ type Instant = time.Time
 type Duration = time.Duration
 
 func (opts optionState) isTimeTag(tag string) bool {
-	if _, ok := opts.vocabularies[VocabularyTimeV1]; !ok {
+	if !opts.vocabularyEnabled(vocabularyTime, VocabularyTimeV1) {
 		return false
 	}
 	switch tag {

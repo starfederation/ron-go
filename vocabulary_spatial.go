@@ -67,7 +67,7 @@ type VoxelCell struct {
 }
 
 func (opts optionState) isSpatialTag(tag string) bool {
-	if _, ok := opts.vocabularies[VocabularySpatialV1]; !ok {
+	if !opts.vocabularyEnabled(vocabularySpatial, VocabularySpatialV1) {
 		return false
 	}
 	switch tag {

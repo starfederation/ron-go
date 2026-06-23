@@ -40,7 +40,7 @@ type OpaqueTag struct {
 }
 
 func (opts optionState) isCoreTag(tag string) bool {
-	if _, ok := opts.vocabularies[VocabularyCoreV1]; !ok {
+	if !opts.vocabularyEnabled(vocabularyCore, VocabularyCoreV1) {
 		return false
 	}
 	switch tag {

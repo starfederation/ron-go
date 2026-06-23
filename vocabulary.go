@@ -11,15 +11,32 @@ import (
 	colorlib "github.com/SCKelemen/color"
 )
 
+type vocabularySet uint16
+
+const (
+	vocabularyCore vocabularySet = 1 << iota
+	vocabularyTime
+	vocabularyNetwork
+	vocabularyMath
+	vocabularySpatial
+	vocabularyGeo
+	vocabularyColor
+
+	defaultVocabularySet = vocabularyCore | vocabularyTime | vocabularyNetwork | vocabularyMath | vocabularySpatial | vocabularyGeo | vocabularyColor
+)
+
 // EnableVocabularies enables validation for supported typed vocabulary URIs.
 // Supported vocabularies are enabled by default; use this for explicit profiles.
 // Unsupported typed values remain ordinary JSON/RON objects unless their vocabulary is enabled.
 func EnableVocabularies(uris ...string) Option {
 	return func(opts *optionState) {
-		if opts.vocabularies == nil {
-			opts.vocabularies = make(map[string]struct{}, len(uris))
-		}
 		for _, uri := range uris {
+			if opts.enableBuiltInVocabulary(uri) {
+				continue
+			}
+			if opts.vocabularies == nil {
+				opts.vocabularies = make(map[string]struct{}, len(uris))
+			}
 			opts.vocabularies[uri] = struct{}{}
 		}
 	}
@@ -38,7 +55,37 @@ func defaultVocabularies() map[string]struct{} {
 }
 
 func (opts optionState) hasVocabularies() bool {
-	return len(opts.vocabularies) > 0
+	return opts.vocabularyMask != 0 || len(opts.vocabularies) > 0
+}
+
+func (opts *optionState) enableBuiltInVocabulary(uri string) bool {
+	switch uri {
+	case VocabularyCoreV1:
+		opts.vocabularyMask |= vocabularyCore
+	case VocabularyTimeV1:
+		opts.vocabularyMask |= vocabularyTime
+	case VocabularyNetworkV1:
+		opts.vocabularyMask |= vocabularyNetwork
+	case VocabularyMathV1:
+		opts.vocabularyMask |= vocabularyMath
+	case VocabularySpatialV1:
+		opts.vocabularyMask |= vocabularySpatial
+	case VocabularyGeoV1:
+		opts.vocabularyMask |= vocabularyGeo
+	case VocabularyColorV1:
+		opts.vocabularyMask |= vocabularyColor
+	default:
+		return false
+	}
+	return true
+}
+
+func (opts optionState) vocabularyEnabled(vocabulary vocabularySet, uri string) bool {
+	if opts.vocabularyMask&vocabulary != 0 {
+		return true
+	}
+	_, ok := opts.vocabularies[uri]
+	return ok
 }
 
 func (opts optionState) parseVocabularies(value any) (any, error) {

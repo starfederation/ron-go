@@ -23,7 +23,7 @@ type CIDR struct {
 }
 
 func (opts optionState) isNetworkTag(tag string) bool {
-	if _, ok := opts.vocabularies[VocabularyNetworkV1]; !ok {
+	if !opts.vocabularyEnabled(vocabularyNetwork, VocabularyNetworkV1) {
 		return false
 	}
 	switch tag {
