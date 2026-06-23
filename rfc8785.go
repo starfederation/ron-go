@@ -295,10 +295,22 @@ func appendRepeatedByte(dst []byte, value byte, count int) []byte {
 	return dst
 }
 
+type objectMemberSorter []objectMember
+
+func (s objectMemberSorter) Len() int {
+	return len(s)
+}
+
+func (s objectMemberSorter) Less(i, j int) bool {
+	return rfc8785StringLess(s[i].Key, s[j].Key)
+}
+
+func (s objectMemberSorter) Swap(i, j int) {
+	s[i], s[j] = s[j], s[i]
+}
+
 func sortObjectMembers(members []objectMember) {
-	sort.Slice(members, func(i, j int) bool {
-		return rfc8785StringLess(members[i].Key, members[j].Key)
-	})
+	sort.Sort(objectMemberSorter(members))
 }
 
 func rfc8785StringLess(left, right string) bool {

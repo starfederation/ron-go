@@ -235,7 +235,23 @@ func FromJSONInto(dst *bytes.Buffer, src []byte, options ...Option) ([]byte, err
 	if opts.isPretty && opts.indent == "" {
 		opts.indent = "  "
 	}
-	value, err := decodeJSON(src, opts.jsonValueMapper)
+	var value any
+	var err error
+	if opts.isCanonical && !opts.isPretty && opts.jsonValueMapper == nil {
+		dec := json.NewDecoder(bytes.NewReader(src))
+		dec.UseNumber()
+		err = dec.Decode(&value)
+		if err == nil {
+			var trailing any
+			if trailingErr := dec.Decode(&trailing); trailingErr == nil {
+				err = newError("unexpected trailing JSON")
+			} else if trailingErr != io.EOF {
+				err = trailingErr
+			}
+		}
+	} else {
+		value, err = decodeJSON(src, opts.jsonValueMapper)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -312,7 +328,7 @@ func decodeJSONValue(dec *json.Decoder, path []JSONPathSegment, mapper jsonValue
 	case json.Delim:
 		switch token {
 		case '{':
-			var object orderedObject
+			object := orderedObject{Members: make([]objectMember, 0, 8)}
 			for dec.More() {
 				keyToken, err := dec.Token()
 				if err != nil {

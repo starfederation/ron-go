@@ -376,8 +376,9 @@ type objectMember struct {
 }
 
 type orderedObject struct {
-	Members []objectMember
-	Index   map[string]int
+	Members   []objectMember
+	Index     map[string]int
+	NeedsSort bool
 }
 
 func (o *orderedObject) Set(key string, value any) {
@@ -406,6 +407,9 @@ func (o *orderedObject) Set(key string, value any) {
 		}
 	}
 
+	if len(o.Members) > 0 && !rfc8785StringLess(o.Members[len(o.Members)-1].Key, key) {
+		o.NeedsSort = true
+	}
 	if o.Index != nil {
 		o.Index[key] = len(o.Members)
 	}
@@ -428,10 +432,11 @@ func objectMembers(value any, canonical bool) []objectMember {
 		sortObjectMembers(members)
 		return members
 	case orderedObject:
-		members := append([]objectMember(nil), value.Members...)
-		if canonical {
-			sortObjectMembers(members)
+		if !canonical || !value.NeedsSort {
+			return value.Members
 		}
+		members := append([]objectMember(nil), value.Members...)
+		sortObjectMembers(members)
 		return members
 	default:
 		panic("unsupported object")

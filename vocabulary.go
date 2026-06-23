@@ -116,12 +116,13 @@ func (opts optionState) parseVocabularyValue(value any) (any, error) {
 		}
 		return value, nil
 	case map[string]any:
-		members := objectMembers(value, false)
-		if tag, payload, ok := opts.enabledTypedValue(members); ok {
-			if len(members) != 1 {
-				return nil, newError("typed vocabulary object must have exactly one member")
+		for key, child := range value {
+			if opts.isCoreTag(key) || opts.isTimeTag(key) || opts.isNetworkTag(key) || opts.isMathTag(key) || opts.isSpatialTag(key) || opts.isGeoTag(key) || opts.isColorTag(key) || opts.isCustomTag(key) {
+				if len(value) != 1 {
+					return nil, newError("typed vocabulary object must have exactly one member")
+				}
+				return opts.parseTypedPayload(key, child)
 			}
-			return opts.parseTypedPayload(tag, payload)
 		}
 		for key, child := range value {
 			parsed, err := opts.parseVocabularyValue(child)
