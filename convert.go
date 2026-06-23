@@ -104,7 +104,7 @@ func ToJSONInto(dst *bytes.Buffer, src []byte, options ...Option) ([]byte, error
 		if err := opts.validateVocabularies(); err != nil {
 			return nil, err
 		}
-		if ronContainsVocabularyMarker(src) {
+		if containsVocabularyMarker(src) {
 			value, err := parse(src)
 			if err != nil {
 				return nil, err
@@ -194,8 +194,8 @@ func ToJSONInto(dst *bytes.Buffer, src []byte, options ...Option) ([]byte, error
 	return dst.Bytes(), nil
 }
 
-func ronContainsVocabularyMarker(src []byte) bool {
-	return bytes.IndexByte(src, '#') >= 0
+func containsVocabularyMarker(src []byte) bool {
+	return bytes.IndexByte(src, '#') >= 0 || bytes.Contains(src, []byte(`\u0023`))
 }
 
 // Indent sets the pretty RON indentation string.
@@ -255,7 +255,7 @@ func FromJSONInto(dst *bytes.Buffer, src []byte, options ...Option) ([]byte, err
 	if err != nil {
 		return nil, err
 	}
-	if opts.hasVocabularies() {
+	if opts.hasVocabularies() && (opts.jsonValueMapper != nil || containsVocabularyMarker(src)) {
 		value, err = opts.parseVocabularies(value)
 		if err != nil {
 			return nil, err

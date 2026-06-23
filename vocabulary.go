@@ -3,6 +3,7 @@ package ron
 import (
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"net/url"
 	"strconv"
 	"strings"
@@ -190,6 +191,13 @@ func (opts optionState) parseTypedPayload(tag string, payload any) (any, error) 
 }
 
 func typedTaggedMemberWithCustom(value any, renderers []CustomRenderFunc) (objectMember, bool) {
+	if len(renderers) == 0 {
+		switch value.(type) {
+		case nil, bool, string, ronNumber, json.Number, int64, uint64, float64, []any, map[string]any, orderedObject:
+			return objectMember{}, false
+		}
+	}
+
 	switch value := value.(type) {
 	case UUID:
 		return objectMember{Key: "#uid", Value: value.String()}, true
