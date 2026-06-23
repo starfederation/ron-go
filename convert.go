@@ -100,12 +100,17 @@ func ToJSONInto(dst *bytes.Buffer, src []byte, options ...Option) ([]byte, error
 		opts.indent = ""
 	}
 	if opts.hasVocabularies() {
-		value, err := parse(src)
-		if err != nil {
+		if err := opts.validateVocabularies(); err != nil {
 			return nil, err
 		}
-		if _, err := opts.parseVocabularies(value); err != nil {
-			return nil, err
+		if ronContainsVocabularyMarker(src) {
+			value, err := parse(src)
+			if err != nil {
+				return nil, err
+			}
+			if _, err := opts.parseVocabularyValue(value); err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -151,6 +156,10 @@ func ToJSONInto(dst *bytes.Buffer, src []byte, options ...Option) ([]byte, error
 		return nil, p.errorf("unexpected trailing data")
 	}
 	return dst.Bytes(), nil
+}
+
+func ronContainsVocabularyMarker(src []byte) bool {
+	return bytes.IndexByte(src, '#') >= 0
 }
 
 // Indent sets the pretty RON indentation string.

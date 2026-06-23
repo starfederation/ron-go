@@ -31,12 +31,19 @@ func (opts optionState) hasVocabularies() bool {
 }
 
 func (opts optionState) parseVocabularies(value any) (any, error) {
-	for uri := range opts.vocabularies {
-		if !opts.supportsVocabulary(uri) {
-			return nil, newError("unsupported vocabulary: " + uri)
-		}
+	if err := opts.validateVocabularies(); err != nil {
+		return nil, err
 	}
 	return opts.parseVocabularyValue(value)
+}
+
+func (opts optionState) validateVocabularies() error {
+	for uri := range opts.vocabularies {
+		if !opts.supportsVocabulary(uri) {
+			return newError("unsupported vocabulary: " + uri)
+		}
+	}
+	return nil
 }
 
 func (opts optionState) parseVocabularyValue(value any) (any, error) {

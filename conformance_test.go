@@ -319,6 +319,48 @@ func TestToJSONDuplicateKeysUseLastValue(t *testing.T) {
 	assertBytesEqual(t, want, got)
 }
 
+func TestRONContainsVocabularyMarker(t *testing.T) {
+	cases := []struct {
+		name string
+		src  []byte
+		want bool
+	}{
+		{
+			name: "untagged query object",
+			src:  []byte("query {filter {status active limit 20} sort [created desc]}"),
+		},
+		{
+			name: "empty core tag",
+			src:  []byte("entity {# 123}"),
+			want: true,
+		},
+		{
+			name: "utc tag",
+			src:  []byte("created {#utc 2026-06-13T00:00:00Z}"),
+			want: true,
+		},
+		{
+			name: "sha256 tag",
+			src:  []byte("digest {#sha256 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855}"),
+			want: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ronContainsVocabularyMarker(tc.src); got != tc.want {
+				t.Fatalf("ronContainsVocabularyMarker() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestToJSONUntaggedStillRejectsUnsupportedVocabulary(t *testing.T) {
+	if _, err := ToJSON([]byte("item {name alpha count 1}"), EnableVocabularies("https://example.com/vocab/unknown/v1")); err == nil {
+		t.Fatal("ToJSON accepted unsupported vocabulary")
+	}
+}
+
 func TestFromJSONCompactDuplicateKeysUseLastValue(t *testing.T) {
 	got, err := FromJSONCompact([]byte(`{"item":{"name":"first","name":"second","count":1}}`))
 	if err != nil {

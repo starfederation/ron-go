@@ -96,6 +96,32 @@ func BenchmarkToJSON(b *testing.B) {
 	}
 }
 
+func BenchmarkToJSONUntaggedQuery(b *testing.B) {
+	b.ReportAllocs()
+	b.SetBytes(int64(len(benchmarkRON)))
+	for b.Loop() {
+		result, err := ToJSON(benchmarkRON)
+		if err != nil {
+			b.Fatal(err)
+		}
+		benchmarkResult = result
+	}
+}
+
+func BenchmarkToJSONTaggedValues(b *testing.B) {
+	body := []byte(`{created {#utc 2026-06-13T00:00:00Z} digest {#sha256 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855} entity {# 123}}`)
+
+	b.ReportAllocs()
+	b.SetBytes(int64(len(body)))
+	for b.Loop() {
+		result, err := ToJSON(body)
+		if err != nil {
+			b.Fatal(err)
+		}
+		benchmarkResult = result
+	}
+}
+
 func BenchmarkToJSONBuffer(b *testing.B) {
 	var buf bytes.Buffer
 	b.ReportAllocs()
