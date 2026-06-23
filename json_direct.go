@@ -3,6 +3,7 @@ package ron
 import (
 	"bytes"
 	"sort"
+	"sync"
 	"unicode/utf8"
 )
 
@@ -10,6 +11,18 @@ type jsonMember struct {
 	Key        string
 	ValueStart int
 	ValueEnd   int
+	KeyASCII   bool
+}
+
+type jsonScratchState struct {
+	buffers []bytes.Buffer
+	members [][]jsonMember
+}
+
+var jsonScratchPool = sync.Pool{
+	New: func() any {
+		return new(jsonScratchState)
+	},
 }
 
 type jsonMemberSorter []jsonMember
@@ -19,6 +32,9 @@ func (s jsonMemberSorter) Len() int {
 }
 
 func (s jsonMemberSorter) Less(i, j int) bool {
+	if s[i].KeyASCII && s[j].KeyASCII {
+		return asciiStringLess(s[i].Key, s[j].Key)
+	}
 	return rfc8785StringLess(s[i].Key, s[j].Key)
 }
 
@@ -31,8 +47,51 @@ func (p *parser) writeJSONValue(buf *bytes.Buffer, prefix, indent string, depth 
 	return p.writeJSONValueCurrent(buf, prefix, indent, depth, canonical)
 }
 
+func (p *parser) nextJSONScratch() *bytes.Buffer {
+	idx := p.jsonScratchDepth
+	p.jsonScratchDepth++
+	if idx == len(p.jsonScratch) {
+		p.jsonScratch = append(p.jsonScratch, bytes.Buffer{})
+	}
+	p.jsonScratch[idx].Reset()
+	return &p.jsonScratch[idx]
+}
+
+func (p *parser) releaseJSONScratch() {
+	p.jsonScratchDepth--
+}
+
+func (p *parser) nextJSONMembers() (int, []jsonMember) {
+	idx := p.jsonMemberScratchDepth
+	p.jsonMemberScratchDepth++
+	if idx == len(p.jsonMemberScratch) {
+		p.jsonMemberScratch = append(p.jsonMemberScratch, make([]jsonMember, 0, 8))
+	}
+	return idx, p.jsonMemberScratch[idx][:0]
+}
+
+func (p *parser) releaseJSONMembers(idx int, members []jsonMember) {
+	p.jsonMemberScratch[idx] = members[:0]
+	p.jsonMemberScratchDepth--
+}
+
 func writeJSONQuoted(buf *bytes.Buffer, value string) {
 	const hex = "0123456789abcdef"
+
+	jsonSafeASCII := true
+	for i := 0; i < len(value); i++ {
+		b := value[i]
+		if b < 0x20 || b == '\\' || b == '"' || b >= utf8.RuneSelf {
+			jsonSafeASCII = false
+			break
+		}
+	}
+	if jsonSafeASCII {
+		buf.WriteByte('"')
+		buf.WriteString(value)
+		buf.WriteByte('"')
+		return
+	}
 
 	buf.WriteByte('"')
 	start := 0
@@ -90,27 +149,36 @@ func (p *parser) writeJSONValueCurrent(buf *bytes.Buffer, prefix, indent string,
 	switch p.src[p.pos] {
 	case '{':
 		p.pos++
-		members := jsonMembers{Values: make([]jsonMember, 0, 8)}
-		var values bytes.Buffer
-		values.Grow(128)
+		memberScratch, memberValues := p.nextJSONMembers()
+		members := jsonMembers{Values: memberValues}
+		values := p.nextJSONScratch()
 		for {
 			p.skipWhitespace()
 			if p.pos == len(p.src) {
+				p.releaseJSONScratch()
+				p.releaseJSONMembers(memberScratch, members.Values)
 				return p.errorf("expected }")
 			}
 			if p.src[p.pos] == '}' {
 				p.pos++
-				return p.writeJSONObjectMembers(buf, members.Values, values.Bytes(), prefix, indent, depth, canonical)
+				err := p.writeJSONObjectMembers(buf, members.Values, values.Bytes(), prefix, indent, depth, canonical && members.NeedsSort)
+				p.releaseJSONScratch()
+				p.releaseJSONMembers(memberScratch, members.Values)
+				return err
 			}
 
 			key, err := p.parseKeyCurrent()
 			if err != nil {
+				p.releaseJSONScratch()
+				p.releaseJSONMembers(memberScratch, members.Values)
 				return err
 			}
 
 			p.skipWhitespace()
 			valueStart := values.Len()
-			if err := p.writeJSONValueCurrent(&values, prefix, indent, depth+1, canonical); err != nil {
+			if err := p.writeJSONValueCurrent(values, prefix, indent, depth+1, canonical); err != nil {
+				p.releaseJSONScratch()
+				p.releaseJSONMembers(memberScratch, members.Values)
 				return err
 			}
 			members.Set(key, valueStart, values.Len())
@@ -203,17 +271,30 @@ func (p *parser) writeJSONValueCurrent(buf *bytes.Buffer, prefix, indent string,
 	case looksLikeNumberBytes(token):
 		buf.Write(token)
 	default:
-		writeJSONQuoted(buf, bytesToString(token))
+		jsonSafeASCII := true
+		for _, b := range token {
+			if b < 0x20 || b == '\\' || b == '"' || b >= utf8.RuneSelf {
+				jsonSafeASCII = false
+				break
+			}
+		}
+		if jsonSafeASCII {
+			buf.WriteByte('"')
+			buf.Write(token)
+			buf.WriteByte('"')
+		} else {
+			writeJSONQuoted(buf, bytesToString(token))
+		}
 	}
 	return nil
 }
 
-func (p *parser) writeJSONObjectMembers(buf *bytes.Buffer, members []jsonMember, values []byte, prefix, indent string, depth int, canonical bool) error {
+func (p *parser) writeJSONObjectMembers(buf *bytes.Buffer, members []jsonMember, values []byte, prefix, indent string, depth int, sortMembers bool) error {
 	if len(members) == 0 {
 		buf.WriteString("{}")
 		return nil
 	}
-	if canonical {
+	if sortMembers {
 		sort.Sort(jsonMemberSorter(members))
 	}
 	buf.WriteByte('{')
@@ -246,32 +327,50 @@ func (p *parser) writeJSONObjectMembers(buf *bytes.Buffer, members []jsonMember,
 }
 
 type jsonMembers struct {
-	Values []jsonMember
-	Index  map[string]int
+	Values    []jsonMember
+	Index     map[string]int
+	NeedsSort bool
 }
 
 func (m *jsonMembers) Set(key string, valueStart, valueEnd int) {
-	if m.Index != nil {
-		if idx, ok := m.Index[key]; ok {
-			copy(m.Values[idx:], m.Values[idx+1:])
-			m.Values = m.Values[:len(m.Values)-1]
-			delete(m.Index, key)
-			for i := idx; i < len(m.Values); i++ {
-				m.Index[m.Values[i].Key] = i
-			}
+	keyASCII := asciiString(key)
+	scanDuplicates := m.NeedsSort
+	if len(m.Values) > 0 {
+		previous := m.Values[len(m.Values)-1]
+		ordered := false
+		if previous.KeyASCII && keyASCII {
+			ordered = asciiStringLess(previous.Key, key)
+		} else {
+			ordered = rfc8785StringLess(previous.Key, key)
 		}
-	} else if len(m.Values) > 0 {
-		for idx, member := range m.Values {
-			if member.Key == key {
+		if !ordered {
+			m.NeedsSort = true
+			scanDuplicates = true
+		}
+	}
+	if scanDuplicates {
+		if m.Index != nil {
+			if idx, ok := m.Index[key]; ok {
 				copy(m.Values[idx:], m.Values[idx+1:])
 				m.Values = m.Values[:len(m.Values)-1]
-				break
+				delete(m.Index, key)
+				for i := idx; i < len(m.Values); i++ {
+					m.Index[m.Values[i].Key] = i
+				}
 			}
-		}
-		if len(m.Values) == 8 {
-			m.Index = make(map[string]int, len(m.Values)+1)
-			for i, member := range m.Values {
-				m.Index[member.Key] = i
+		} else {
+			for idx, member := range m.Values {
+				if member.Key == key {
+					copy(m.Values[idx:], m.Values[idx+1:])
+					m.Values = m.Values[:len(m.Values)-1]
+					break
+				}
+			}
+			if len(m.Values) >= 8 {
+				m.Index = make(map[string]int, len(m.Values)+1)
+				for i, member := range m.Values {
+					m.Index[member.Key] = i
+				}
 			}
 		}
 	}
@@ -282,6 +381,7 @@ func (m *jsonMembers) Set(key string, valueStart, valueEnd int) {
 		Key:        key,
 		ValueStart: valueStart,
 		ValueEnd:   valueEnd,
+		KeyASCII:   keyASCII,
 	})
 }
 

@@ -74,7 +74,7 @@ type Matrix3 = ronmath.Matrix3[float64]
 type Matrix4 = ronmath.Matrix4[float64]
 
 func (opts optionState) isMathTag(tag string) bool {
-	if _, ok := opts.vocabularies[VocabularyMathV1]; !ok {
+	if !opts.vocabularyEnabled(vocabularyMath, VocabularyMathV1) {
 		return false
 	}
 	switch tag {
@@ -222,56 +222,26 @@ func (opts optionState) parseMathPayload(tag string, payload any) (any, error) {
 		if !ok {
 			return nil, newError("invalid #eul payload")
 		}
-		order, ok := parseEulerOrder(orderName)
-		if !ok {
+		var order EulerOrder
+		switch orderName {
+		case "XYZ":
+			order = EulerOrderXYZ
+		case "YXZ":
+			order = EulerOrderYXZ
+		case "ZXY":
+			order = EulerOrderZXY
+		case "ZYX":
+			order = EulerOrderZYX
+		case "YZX":
+			order = EulerOrderYZX
+		case "XZY":
+			order = EulerOrderXZY
+		default:
 			return nil, newError("invalid #eul payload")
 		}
 		return Euler{X: xyz[0], Y: xyz[1], Z: xyz[2], Order: order}, nil
 	default:
 		return nil, newError("unsupported math tag")
-	}
-}
-
-func mathTaggedMember(value any) (objectMember, bool) {
-	switch value := value.(type) {
-	case Int64:
-		return objectMember{Key: "#i64", Value: strconv.FormatInt(int64(value), 10)}, true
-	case Uint64:
-		return objectMember{Key: "#u64", Value: strconv.FormatUint(uint64(value), 10)}, true
-	case Float64:
-		return objectMember{Key: "#f64", Value: float64(value)}, true
-	case IntVectorN:
-		return objectMember{Key: "#ivN", Value: intSliceToAny(value)}, true
-	case VectorN:
-		return objectMember{Key: "#vN", Value: floatSliceToAny(value)}, true
-	case IntVector2:
-		return objectMember{Key: "#iv2", Value: []any{value[0], value[1]}}, true
-	case IntVector3:
-		return objectMember{Key: "#iv3", Value: []any{value[0], value[1], value[2]}}, true
-	case IntVector4:
-		return objectMember{Key: "#iv4", Value: []any{value[0], value[1], value[2], value[3]}}, true
-	case Vector2:
-		return objectMember{Key: "#f2v", Value: []any{value.X, value.Y}}, true
-	case Vector3:
-		return objectMember{Key: "#f3v", Value: []any{value.X, value.Y, value.Z}}, true
-	case Vector4:
-		return objectMember{Key: "#f4v", Value: []any{value[0], value[1], value[2], value[3]}}, true
-	case Quaternion:
-		return objectMember{Key: "#qat", Value: []any{value.X, value.Y, value.Z, value.W}}, true
-	case Euler:
-		order, ok := formatEulerOrder(value.Order)
-		if !ok {
-			return objectMember{}, false
-		}
-		return objectMember{Key: "#eul", Value: []any{value.X, value.Y, value.Z, order}}, true
-	case Matrix2:
-		return objectMember{Key: "#m2x", Value: floatSliceToAny(value[:])}, true
-	case Matrix3:
-		return objectMember{Key: "#m3x", Value: floatSliceToAny(value[:])}, true
-	case Matrix4:
-		return objectMember{Key: "#m4x", Value: floatSliceToAny(value[:])}, true
-	default:
-		return objectMember{}, false
 	}
 }
 
@@ -347,42 +317,4 @@ func floatSliceToAny[S ~[]float64](values S) []any {
 		out[i] = value
 	}
 	return out
-}
-
-func parseEulerOrder(value string) (EulerOrder, bool) {
-	switch value {
-	case "XYZ":
-		return EulerOrderXYZ, true
-	case "YXZ":
-		return EulerOrderYXZ, true
-	case "ZXY":
-		return EulerOrderZXY, true
-	case "ZYX":
-		return EulerOrderZYX, true
-	case "YZX":
-		return EulerOrderYZX, true
-	case "XZY":
-		return EulerOrderXZY, true
-	default:
-		return ronmath.EULER_ORDER_DEFAULT, false
-	}
-}
-
-func formatEulerOrder(value EulerOrder) (string, bool) {
-	switch value {
-	case EulerOrderXYZ:
-		return "XYZ", true
-	case EulerOrderYXZ:
-		return "YXZ", true
-	case EulerOrderZXY:
-		return "ZXY", true
-	case EulerOrderZYX:
-		return "ZYX", true
-	case EulerOrderYZX:
-		return "YZX", true
-	case EulerOrderXZY:
-		return "XZY", true
-	default:
-		return "", false
-	}
 }

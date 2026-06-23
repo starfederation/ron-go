@@ -13,7 +13,7 @@ type VocabularyProfile struct {
 // ValidateVocabularyProfile rejects required vocabularies that ron-go does not support.
 func ValidateVocabularyProfile(src []byte, options ...Option) error {
 	opts := optionState{
-		vocabularies: defaultVocabularies(),
+		vocabularyMask: defaultVocabularySet,
 	}
 	for _, option := range options {
 		option(&opts)

@@ -91,25 +91,6 @@ func (opts optionState) customRenderersList() []CustomRenderFunc {
 	return renderers
 }
 
-func customTaggedMember(value any, renderers []CustomRenderFunc) (objectMember, bool) {
-	switch value := value.(type) {
-	case CustomValue:
-		return objectMember{Key: normalizeCustomTag(value.Tag), Value: value.Payload}, true
-	case *CustomValue:
-		if value == nil {
-			return objectMember{}, false
-		}
-		return objectMember{Key: normalizeCustomTag(value.Tag), Value: value.Payload}, true
-	}
-	for _, render := range renderers {
-		tag, payload, ok := render(value)
-		if ok {
-			return objectMember{Key: normalizeCustomTag(tag), Value: payload}, true
-		}
-	}
-	return objectMember{}, false
-}
-
 func normalizeCustomTag(tag string) string {
 	if strings.HasPrefix(tag, "#") {
 		return tag

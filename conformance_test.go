@@ -14,24 +14,40 @@ import (
 )
 
 type conformanceManifest struct {
-	Version            int                        `json:"version"`
-	Formatting         conformanceFormatting      `json:"formatting"`
-	Valid              []conformanceValidCase     `json:"valid"`
-	InvalidRON         []string                   `json:"invalidRON"`
-	InvalidJSON        []string                   `json:"invalidJSON"`
-	JSONToRONRendering []conformanceRenderingCase `json:"jsonToRONRendering"`
-}
-
-type conformanceFormatting struct {
-	JSONPrefix                string                   `json:"jsonPrefix"`
-	JSONIndent                string                   `json:"jsonIndent"`
-	RONIndent                 string                   `json:"ronIndent"`
-	PrettyRONTrailingNewline  bool                     `json:"prettyRONTrailingNewline"`
-	ObjectKeyOrder            string                   `json:"objectKeyOrder"`
-	CanonicalRON              string                   `json:"canonicalRON"`
-	CanonicalRONHashAlgorithm string                   `json:"canonicalRONHashAlgorithm"`
-	ExpectedPrettyOptions     conformanceFormatOptions `json:"expectedPrettyOptions"`
-	ExpectedCompactOptions    conformanceFormatOptions `json:"expectedCompactOptions"`
+	Version    int `json:"version"`
+	Formatting struct {
+		JSONPrefix                string                   `json:"jsonPrefix"`
+		JSONIndent                string                   `json:"jsonIndent"`
+		RONIndent                 string                   `json:"ronIndent"`
+		PrettyRONTrailingNewline  bool                     `json:"prettyRONTrailingNewline"`
+		ObjectKeyOrder            string                   `json:"objectKeyOrder"`
+		CanonicalRON              string                   `json:"canonicalRON"`
+		CanonicalRONHashAlgorithm string                   `json:"canonicalRONHashAlgorithm"`
+		ExpectedPrettyOptions     conformanceFormatOptions `json:"expectedPrettyOptions"`
+		ExpectedCompactOptions    conformanceFormatOptions `json:"expectedCompactOptions"`
+	} `json:"formatting"`
+	Valid []struct {
+		Name                       string   `json:"name"`
+		RONInputs                  []string `json:"ronInputs"`
+		JSONInput                  string   `json:"jsonInput"`
+		ExpectedPrettyJSON         string   `json:"expectedPrettyJSON"`
+		ExpectedCompactJSON        string   `json:"expectedCompactJSON"`
+		ExpectedPrettyRON          string   `json:"expectedPrettyRON"`
+		ExpectedCompactRON         string   `json:"expectedCompactRON"`
+		ExpectedCanonicalRONSHA256 string   `json:"expectedCanonicalRONSHA256"`
+	} `json:"valid"`
+	InvalidRON         []string `json:"invalidRON"`
+	InvalidJSON        []string `json:"invalidJSON"`
+	JSONToRONRendering []struct {
+		Name            string                   `json:"name"`
+		JSONInput       string                   `json:"jsonInput"`
+		Options         conformanceFormatOptions `json:"options"`
+		TypedValueHooks []struct {
+			Path        []any           `json:"path"`
+			ReplaceWith json.RawMessage `json:"replaceWith"`
+		} `json:"typedValueHooks"`
+		ExpectedRON string `json:"expectedRON"`
+	} `json:"jsonToRONRendering"`
 }
 
 type conformanceFormatOptions struct {
@@ -39,52 +55,19 @@ type conformanceFormatOptions struct {
 	IsCanonical bool `json:"isCanonical"`
 }
 
-type conformanceValidCase struct {
-	Name                       string   `json:"name"`
-	RONInputs                  []string `json:"ronInputs"`
-	JSONInput                  string   `json:"jsonInput"`
-	ExpectedPrettyJSON         string   `json:"expectedPrettyJSON"`
-	ExpectedCompactJSON        string   `json:"expectedCompactJSON"`
-	ExpectedPrettyRON          string   `json:"expectedPrettyRON"`
-	ExpectedCompactRON         string   `json:"expectedCompactRON"`
-	ExpectedCanonicalRONSHA256 string   `json:"expectedCanonicalRONSHA256"`
-}
-
-type conformanceRenderingCase struct {
-	Name            string                   `json:"name"`
-	JSONInput       string                   `json:"jsonInput"`
-	Options         conformanceFormatOptions `json:"options"`
-	TypedValueHooks []conformanceTypedHook   `json:"typedValueHooks"`
-	ExpectedRON     string                   `json:"expectedRON"`
-}
-
-type conformanceTypedHook struct {
-	Path        []any           `json:"path"`
-	ReplaceWith json.RawMessage `json:"replaceWith"`
-}
-
 type rfc8785Manifest struct {
-	Valid               []rfc8785ValidCase       `json:"valid"`
-	NumberSerialization string                   `json:"numberSerialization"`
-	InvalidIJSON        []rfc8785InvalidJSONCase `json:"invalidIJSON"`
-}
-
-type rfc8785ValidCase struct {
-	Name                        string `json:"name"`
-	InputJSON                   string `json:"inputJSON"`
-	ExpectedCanonicalJSON       string `json:"expectedCanonicalJSON"`
-	ExpectedCanonicalUTF8Hex    string `json:"expectedCanonicalUTF8Hex"`
-	ExpectedCanonicalJSONSHA256 string `json:"expectedCanonicalJSONSHA256"`
-}
-
-type rfc8785InvalidJSONCase struct {
-	Name      string `json:"name"`
-	InputJSON string `json:"inputJSON"`
-}
-
-type rfc8785NumberSerialization struct {
-	Finite               []rfc8785NumberCase `json:"finite"`
-	RejectedNativeValues []rfc8785NumberCase `json:"rejectedNativeValues"`
+	Valid []struct {
+		Name                        string `json:"name"`
+		InputJSON                   string `json:"inputJSON"`
+		ExpectedCanonicalJSON       string `json:"expectedCanonicalJSON"`
+		ExpectedCanonicalUTF8Hex    string `json:"expectedCanonicalUTF8Hex"`
+		ExpectedCanonicalJSONSHA256 string `json:"expectedCanonicalJSONSHA256"`
+	} `json:"valid"`
+	NumberSerialization string `json:"numberSerialization"`
+	InvalidIJSON        []struct {
+		Name      string `json:"name"`
+		InputJSON string `json:"inputJSON"`
+	} `json:"invalidIJSON"`
 }
 
 type rfc8785NumberCase struct {
@@ -271,7 +254,10 @@ func TestRFC8785NumberSerialization(t *testing.T) {
 	root, manifest := loadRFC8785Manifest(t)
 	body := readConformanceFile(t, root, manifest.NumberSerialization)
 
-	var numbers rfc8785NumberSerialization
+	var numbers struct {
+		Finite               []rfc8785NumberCase `json:"finite"`
+		RejectedNativeValues []rfc8785NumberCase `json:"rejectedNativeValues"`
+	}
 	if err := json.Unmarshal(body, &numbers); err != nil {
 		t.Fatalf("unmarshal number serialization: %v", err)
 	}
@@ -309,6 +295,25 @@ func TestRFC8785InvalidIJSON(t *testing.T) {
 	}
 }
 
+func TestRFC8785StringLessUsesUTF16Order(t *testing.T) {
+	if !rfc8785StringLess("\U0001f600", "\ue000") {
+		t.Fatal("rfc8785StringLess did not use UTF-16 code unit order")
+	}
+	if rfc8785StringLess("\ue000", "\U0001f600") {
+		t.Fatal("rfc8785StringLess reversed UTF-16 code unit order")
+	}
+}
+
+func TestRFC8785StringLessDoesNotAllocate(t *testing.T) {
+	allocs := testing.AllocsPerRun(1000, func() {
+		_ = rfc8785StringLess("created", "digest")
+		_ = rfc8785StringLess("\U0001f600", "\ue000")
+	})
+	if allocs != 0 {
+		t.Fatalf("rfc8785StringLess allocated %v times", allocs)
+	}
+}
+
 func TestToJSONDuplicateKeysUseLastValue(t *testing.T) {
 	got, err := ToJSON([]byte("item {name first name second count 1}"))
 	if err != nil {
@@ -317,6 +322,48 @@ func TestToJSONDuplicateKeysUseLastValue(t *testing.T) {
 
 	want := []byte(`{"item":{"count":1,"name":"second"}}`)
 	assertBytesEqual(t, want, got)
+}
+
+func TestRONContainsVocabularyMarker(t *testing.T) {
+	cases := []struct {
+		name string
+		src  []byte
+		want bool
+	}{
+		{
+			name: "untagged query object",
+			src:  []byte("query {filter {status active limit 20} sort [created desc]}"),
+		},
+		{
+			name: "empty core tag",
+			src:  []byte("entity {# 123}"),
+			want: true,
+		},
+		{
+			name: "utc tag",
+			src:  []byte("created {#utc 2026-06-13T00:00:00Z}"),
+			want: true,
+		},
+		{
+			name: "sha256 tag",
+			src:  []byte("digest {#sha256 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855}"),
+			want: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := containsVocabularyMarker(tc.src); got != tc.want {
+				t.Fatalf("containsVocabularyMarker() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestToJSONUntaggedStillRejectsUnsupportedVocabulary(t *testing.T) {
+	if _, err := ToJSON([]byte("item {name alpha count 1}"), EnableVocabularies("https://example.com/vocab/unknown/v1")); err == nil {
+		t.Fatal("ToJSON accepted unsupported vocabulary")
+	}
 }
 
 func TestFromJSONCompactDuplicateKeysUseLastValue(t *testing.T) {

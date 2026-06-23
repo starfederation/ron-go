@@ -24,8 +24,12 @@ func newError(msg string) error {
 }
 
 type parser struct {
-	src []byte
-	pos int
+	src                    []byte
+	pos                    int
+	jsonScratch            []bytes.Buffer
+	jsonScratchDepth       int
+	jsonMemberScratch      [][]jsonMember
+	jsonMemberScratchDepth int
 }
 
 type ronNumber string

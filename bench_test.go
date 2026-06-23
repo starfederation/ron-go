@@ -2,15 +2,13 @@ package ron
 
 import (
 	"bytes"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
 )
 
-var (
-	benchmarkResult []byte
-	benchmarkAny    any
-)
+var benchmarkResult []byte
 
 var (
 	benchmarkRON = []byte(func() string {
@@ -89,6 +87,32 @@ func BenchmarkToJSON(b *testing.B) {
 	b.SetBytes(int64(len(benchmarkRON)))
 	for b.Loop() {
 		result, err := ToJSON(benchmarkRON)
+		if err != nil {
+			b.Fatal(err)
+		}
+		benchmarkResult = result
+	}
+}
+
+func BenchmarkToJSONUntaggedQuery(b *testing.B) {
+	b.ReportAllocs()
+	b.SetBytes(int64(len(benchmarkRON)))
+	for b.Loop() {
+		result, err := ToJSON(benchmarkRON)
+		if err != nil {
+			b.Fatal(err)
+		}
+		benchmarkResult = result
+	}
+}
+
+func BenchmarkToJSONTaggedValues(b *testing.B) {
+	body := []byte(`{created {#utc 2026-06-13T00:00:00Z} digest {#sha256 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855} entity {# 123}}`)
+
+	b.ReportAllocs()
+	b.SetBytes(int64(len(body)))
+	for b.Loop() {
+		result, err := ToJSON(body)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -182,7 +206,7 @@ func BenchmarkParseRON(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		benchmarkAny = result
+		runtime.KeepAlive(result)
 	}
 }
 
@@ -192,7 +216,7 @@ func BenchmarkRenderRONCompact(b *testing.B) {
 	for b.Loop() {
 		var buf bytes.Buffer
 		buf.Grow(len(benchmarkRON))
-		writeCompactValue(&buf, benchmarkValue, true, true)
+		writeCompactValueWithCustom(&buf, benchmarkValue, true, true, nil)
 		benchmarkResult = buf.Bytes()
 	}
 }
@@ -203,7 +227,7 @@ func BenchmarkRenderRONPretty(b *testing.B) {
 	for b.Loop() {
 		var buf bytes.Buffer
 		buf.Grow(len(benchmarkRON) * 2)
-		writeValue(&buf, benchmarkValue, "  ", 0, true)
+		writeValueWithCustom(&buf, benchmarkValue, "  ", 0, true, nil)
 		buf.WriteByte('\n')
 		benchmarkResult = buf.Bytes()
 	}

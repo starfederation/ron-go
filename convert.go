@@ -12,6 +12,7 @@ type Option func(*optionState)
 type optionState struct {
 	formatOptions
 	jsonValueMapper       jsonValueMapper
+	vocabularyMask        vocabularySet
 	vocabularies          map[string]struct{}
 	customVocabularies    map[string]CustomVocabulary
 	customVocabularyOrder []string
@@ -86,8 +87,8 @@ func ToJSONInto(dst *bytes.Buffer, src []byte, options ...Option) ([]byte, error
 	}
 
 	opts := optionState{
-		formatOptions: formatOptions{isCanonical: true},
-		vocabularies:  defaultVocabularies(),
+		formatOptions:  formatOptions{isCanonical: true},
+		vocabularyMask: defaultVocabularySet,
 	}
 	for _, option := range options {
 		option(&opts)
@@ -100,41 +101,81 @@ func ToJSONInto(dst *bytes.Buffer, src []byte, options ...Option) ([]byte, error
 		opts.indent = ""
 	}
 	if opts.hasVocabularies() {
-		value, err := parse(src)
-		if err != nil {
+		if err := opts.validateVocabularies(); err != nil {
 			return nil, err
 		}
-		if _, err := opts.parseVocabularies(value); err != nil {
-			return nil, err
+		if containsVocabularyMarker(src) {
+			value, err := parse(src)
+			if err != nil {
+				return nil, err
+			}
+			if _, err := opts.parseVocabularyValue(value); err != nil {
+				return nil, err
+			}
 		}
 	}
 
-	p := parser{src: src}
+	scratch := jsonScratchPool.Get().(*jsonScratchState)
+	p := parser{
+		src:               src,
+		jsonScratch:       scratch.buffers,
+		jsonMemberScratch: scratch.members,
+	}
+	defer func() {
+		scratch.buffers = p.jsonScratch
+		scratch.members = p.jsonMemberScratch
+		for i := range scratch.buffers {
+			if scratch.buffers[i].Cap() > 1<<20 {
+				scratch.buffers[i] = bytes.Buffer{}
+			} else {
+				scratch.buffers[i].Reset()
+			}
+		}
+		for i := range scratch.members {
+			if cap(scratch.members[i]) > 1024 {
+				scratch.members[i] = nil
+			} else {
+				scratch.members[i] = scratch.members[i][:0]
+			}
+		}
+		jsonScratchPool.Put(scratch)
+	}()
 	p.skipSpace()
 	if p.pos < len(p.src) && p.src[p.pos] != '{' && p.src[p.pos] != '[' {
 		start := p.pos
 		bufStart := dst.Len()
-		members := jsonMembers{Values: make([]jsonMember, 0, 4)}
-		var values bytes.Buffer
+		memberScratch, memberValues := p.nextJSONMembers()
+		members := jsonMembers{Values: memberValues}
+		values := p.nextJSONScratch()
 		for {
 			p.skipSpace()
 			if p.pos == len(p.src) {
-				if err := p.writeJSONObjectMembers(dst, members.Values, values.Bytes(), opts.prefix, opts.indent, 0, opts.isCanonical); err != nil {
+				if err := p.writeJSONObjectMembers(dst, members.Values, values.Bytes(), opts.prefix, opts.indent, 0, opts.isCanonical && members.NeedsSort); err != nil {
+					p.releaseJSONScratch()
+					p.releaseJSONMembers(memberScratch, members.Values)
 					return nil, err
 				}
+				p.releaseJSONScratch()
+				p.releaseJSONMembers(memberScratch, members.Values)
 				return dst.Bytes(), nil
 			}
 			if p.src[p.pos] == '{' || p.src[p.pos] == '[' {
+				p.releaseJSONScratch()
+				p.releaseJSONMembers(memberScratch, members.Values)
 				break
 			}
 
 			key, err := p.parseKeyCurrent()
 			if err != nil {
+				p.releaseJSONScratch()
+				p.releaseJSONMembers(memberScratch, members.Values)
 				break
 			}
 
 			valueStart := values.Len()
-			if err := p.writeJSONValue(&values, opts.prefix, opts.indent, 1, opts.isCanonical); err != nil {
+			if err := p.writeJSONValue(values, opts.prefix, opts.indent, 1, opts.isCanonical); err != nil {
+				p.releaseJSONScratch()
+				p.releaseJSONMembers(memberScratch, members.Values)
 				break
 			}
 			members.Set(key, valueStart, values.Len())
@@ -151,6 +192,10 @@ func ToJSONInto(dst *bytes.Buffer, src []byte, options ...Option) ([]byte, error
 		return nil, p.errorf("unexpected trailing data")
 	}
 	return dst.Bytes(), nil
+}
+
+func containsVocabularyMarker(src []byte) bool {
+	return bytes.IndexByte(src, '#') >= 0 || bytes.Contains(src, []byte(`\u0023`))
 }
 
 // Indent sets the pretty RON indentation string.
@@ -182,7 +227,7 @@ func FromJSONInto(dst *bytes.Buffer, src []byte, options ...Option) ([]byte, err
 			isPretty:    true,
 			isCanonical: true,
 		},
-		vocabularies: defaultVocabularies(),
+		vocabularyMask: defaultVocabularySet,
 	}
 	for _, option := range options {
 		option(&opts)
@@ -190,11 +235,27 @@ func FromJSONInto(dst *bytes.Buffer, src []byte, options ...Option) ([]byte, err
 	if opts.isPretty && opts.indent == "" {
 		opts.indent = "  "
 	}
-	value, err := decodeJSON(src, opts.jsonValueMapper)
+	var value any
+	var err error
+	if opts.isCanonical && !opts.isPretty && opts.jsonValueMapper == nil {
+		dec := json.NewDecoder(bytes.NewReader(src))
+		dec.UseNumber()
+		err = dec.Decode(&value)
+		if err == nil {
+			var trailing any
+			if trailingErr := dec.Decode(&trailing); trailingErr == nil {
+				err = newError("unexpected trailing JSON")
+			} else if trailingErr != io.EOF {
+				err = trailingErr
+			}
+		}
+	} else {
+		value, err = decodeJSON(src, opts.jsonValueMapper)
+	}
 	if err != nil {
 		return nil, err
 	}
-	if opts.hasVocabularies() {
+	if opts.hasVocabularies() && (opts.jsonValueMapper != nil || containsVocabularyMarker(src)) {
 		value, err = opts.parseVocabularies(value)
 		if err != nil {
 			return nil, err
@@ -267,7 +328,7 @@ func decodeJSONValue(dec *json.Decoder, path []JSONPathSegment, mapper jsonValue
 	case json.Delim:
 		switch token {
 		case '{':
-			var object orderedObject
+			object := orderedObject{Members: make([]objectMember, 0, 8)}
 			for dec.More() {
 				keyToken, err := dec.Token()
 				if err != nil {

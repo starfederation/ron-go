@@ -7,11 +7,13 @@ type CubicBezierCurve[T Float] struct {
 
 func NewCubicBezierCurve3[T Float](v0, v1, v2, v3 Vector3[T]) *CubicBezierCurve[T] {
 	return &CubicBezierCurve[T]{
-		baseCurve: *newBaseCurve[T](),
-		V0:        v0,
-		V1:        v1,
-		V2:        v2,
-		V3:        v3,
+		baseCurve: baseCurve[T]{
+			ArcLengthDivisions: 200,
+		},
+		V0: v0,
+		V1: v1,
+		V2: v2,
+		V3: v3,
 	}
 }
 

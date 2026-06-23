@@ -23,7 +23,7 @@ type CIDR struct {
 }
 
 func (opts optionState) isNetworkTag(tag string) bool {
-	if _, ok := opts.vocabularies[VocabularyNetworkV1]; !ok {
+	if !opts.vocabularyEnabled(vocabularyNetwork, VocabularyNetworkV1) {
 		return false
 	}
 	switch tag {
@@ -60,36 +60,5 @@ func (opts optionState) parseNetworkPayload(tag string, payload any) (any, error
 		return CIDR{Prefix: prefix}, nil
 	default:
 		return nil, newError("unsupported network tag")
-	}
-}
-
-func networkTaggedMember(value any) (objectMember, bool) {
-	switch value := value.(type) {
-	case IPv4:
-		if !value.Addr.Is4() {
-			return objectMember{}, false
-		}
-		return objectMember{
-			Key:   "#ip4",
-			Value: value.Addr.String(),
-		}, true
-	case IPv6:
-		if !value.Addr.Is6() || value.Addr.Is4In6() {
-			return objectMember{}, false
-		}
-		return objectMember{
-			Key:   "#ip6",
-			Value: value.Addr.String(),
-		}, true
-	case CIDR:
-		if value.Prefix != value.Prefix.Masked() {
-			return objectMember{}, false
-		}
-		return objectMember{
-			Key:   "#cdr",
-			Value: value.Prefix.String(),
-		}, true
-	default:
-		return objectMember{}, false
 	}
 }

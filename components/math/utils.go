@@ -18,10 +18,6 @@ const (
 	CoordinateSystemWebGPU
 )
 
-var (
-	coordinateSystem = CoordinateSystemWebGL
-)
-
 func Clamp[T Float](value, min, max T) T {
 	return T(stdmath.Max(float64(min), stdmath.Min(float64(max), float64(value))))
 }

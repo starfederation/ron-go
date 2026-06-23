@@ -18,10 +18,10 @@ func TestHelpers(t *testing.T) {
 	}
 
 	polygon := Polygon{{
-		{0, 0},
-		{1, 0},
-		{1, 1},
-		{0, 0},
+		{X: 0, Y: 0},
+		{X: 1, Y: 0},
+		{X: 1, Y: 1},
+		{X: 0, Y: 0},
 	}}
 	if !PolygonContains(polygon, Point{X: 0.5, Y: 0.25}) {
 		t.Fatal("polygon should contain point")

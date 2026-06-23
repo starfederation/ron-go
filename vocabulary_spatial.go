@@ -67,7 +67,7 @@ type VoxelCell struct {
 }
 
 func (opts optionState) isSpatialTag(tag string) bool {
-	if _, ok := opts.vocabularies[VocabularySpatialV1]; !ok {
+	if !opts.vocabularyEnabled(vocabularySpatial, VocabularySpatialV1) {
 		return false
 	}
 	switch tag {
@@ -178,49 +178,6 @@ func (opts optionState) parseSpatialPayload(tag string, payload any) (any, error
 		return opts.parseVoxelSet(payload)
 	default:
 		return nil, newError("unsupported spatial tag")
-	}
-}
-
-func spatialTaggedMember(value any) (objectMember, bool) {
-	switch value := value.(type) {
-	case LngLatAlt:
-		return objectMember{Key: "#lla", Value: []any{value.Point.X, value.Point.Y, value.Altitude}}, true
-	case Spherical:
-		return objectMember{Key: "#sph", Value: []any{value.Radius, value.Phi, value.Theta}}, true
-	case Cylindrical:
-		return objectMember{Key: "#cyl", Value: []any{value.Radius, value.Theta, value.Y}}, true
-	case Box2:
-		return objectMember{Key: "#bx2", Value: []any{anyVector2(value.Min), anyVector2(value.Max)}}, true
-	case Box3:
-		return objectMember{Key: "#bx3", Value: []any{anyVector3(value.Min), anyVector3(value.Max)}}, true
-	case Sphere:
-		return objectMember{Key: "#spr", Value: []any{anyVector3(value.Center), value.Radius}}, true
-	case Plane:
-		return objectMember{Key: "#pln", Value: []any{anyVector3(value.Normal), value.Constant}}, true
-	case Ray:
-		return objectMember{Key: "#ray", Value: []any{anyVector3(value.Origin), anyVector3(value.Dir)}}, true
-	case Line2:
-		return objectMember{Key: "#ln2", Value: []any{anyVector2(value.Start), anyVector2(value.End)}}, true
-	case Line3:
-		return objectMember{Key: "#ln3", Value: []any{anyVector3(value.Start), anyVector3(value.End)}}, true
-	case Triangle:
-		return objectMember{Key: "#tri", Value: []any{anyVector3(value.A), anyVector3(value.B), anyVector3(value.C)}}, true
-	case Frustum:
-		planes := make([]any, len(value))
-		for i, plane := range value {
-			planes[i] = []any{anyVector3(plane.Normal), plane.Constant}
-		}
-		return objectMember{Key: "#fru", Value: planes}, true
-	case SphericalHarmonics3:
-		vectors := make([]any, len(value))
-		for i, vector := range value {
-			vectors[i] = anyVector3(vector)
-		}
-		return objectMember{Key: "#sh3", Value: vectors}, true
-	case VoxelSet:
-		return objectMember{Key: "#vox", Value: renderVoxelSet(value)}, true
-	default:
-		return objectMember{}, false
 	}
 }
 
@@ -342,23 +299,6 @@ func (opts optionState) parseVoxelSet(payload any) (VoxelSet, error) {
 		return VoxelSet{}, newError("invalid #vox payload")
 	}
 	return voxel, nil
-}
-
-func renderVoxelSet(value VoxelSet) orderedObject {
-	var object orderedObject
-	object.Set("dimensions", value.Dimensions)
-	object.Set("origin", VectorN(value.Origin))
-	object.Set("cellSize", VectorN(value.CellSize))
-	cells := make([]any, len(value.Cells))
-	for i, cell := range value.Cells {
-		cells[i] = []any{intSliceToAny(cell.Coordinate), cell.Value}
-	}
-	if len(cells) > 0 {
-		object.Set("cells", multilineArray(cells))
-	} else {
-		object.Set("cells", cells)
-	}
-	return object
 }
 
 func vector2FromSlice(values []float64) Vector2 {

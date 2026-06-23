@@ -40,7 +40,7 @@ type OpaqueTag struct {
 }
 
 func (opts optionState) isCoreTag(tag string) bool {
-	if _, ok := opts.vocabularies[VocabularyCoreV1]; !ok {
+	if !opts.vocabularyEnabled(vocabularyCore, VocabularyCoreV1) {
 		return false
 	}
 	switch tag {
@@ -74,7 +74,32 @@ func (opts optionState) parseCorePayload(tag string, payload any) (any, error) {
 		}
 		return parsed, nil
 	case "#rx":
-		return parseRegExpPayload(payload)
+		array, ok := payload.([]any)
+		if !ok || len(array) < 1 || len(array) > 2 {
+			return nil, newError("invalid #rx payload")
+		}
+		source, ok := array[0].(string)
+		if !ok {
+			return nil, newError("invalid #rx payload")
+		}
+
+		flags := ""
+		if len(array) == 2 {
+			var ok bool
+			flags, ok = array[1].(string)
+			if !ok {
+				return nil, newError("invalid #rx payload")
+			}
+		}
+		if !validJSRegExpFlags(flags) {
+			return nil, newError("invalid #rx flags")
+		}
+
+		value, err := ParseRegExp(source, flags)
+		if err != nil {
+			return nil, newError("invalid #rx source")
+		}
+		return value, nil
 	case "#dec":
 		value, ok := payload.(string)
 		if !ok || value == "" {
@@ -139,7 +164,7 @@ func (opts optionState) parseCorePayload(tag string, payload any) (any, error) {
 			return nil, newError("invalid #sha256 payload")
 		}
 		for i := range value {
-			if !isLowerHexByte(value[i]) {
+			if (value[i] < '0' || value[i] > '9') && (value[i] < 'a' || value[i] > 'f') {
 				return nil, newError("invalid #sha256 payload")
 			}
 		}
@@ -207,75 +232,8 @@ func (opts optionState) parseCorePayload(tag string, payload any) (any, error) {
 	}
 }
 
-func coreTaggedMember(value any) (objectMember, bool) {
-	switch value := value.(type) {
-	case uuid.UUID:
-		return objectMember{
-			Key:   "#uid",
-			Value: value.String(),
-		}, true
-	case *url.URL:
-		if value == nil {
-			return objectMember{}, false
-		}
-		return objectMember{
-			Key:   "#url",
-			Value: value.String(),
-		}, true
-	case RegExp:
-		return regExpTaggedMember(value), true
-	case *RegExp:
-		if value == nil {
-			return objectMember{}, false
-		}
-		return regExpTaggedMember(*value), true
-	case Decimal:
-		return objectMember{
-			Key:   "#dec",
-			Value: canonicalDecimalString(&value),
-		}, true
-	case *Decimal:
-		if value == nil {
-			return objectMember{}, false
-		}
-		return objectMember{
-			Key:   "#dec",
-			Value: canonicalDecimalString(value),
-		}, true
-	case Bytes:
-		return objectMember{
-			Key:   "#b64",
-			Value: base64.RawURLEncoding.EncodeToString(value),
-		}, true
-	case SHA256:
-		return objectMember{
-			Key:   "#sha256",
-			Value: hex.EncodeToString(value[:]),
-		}, true
-	case EntityRef:
-		return objectMember{
-			Key:   "#",
-			Value: value.Value,
-		}, true
-	case OpaqueTag:
-		return objectMember{
-			Key: "#tag",
-			Value: []any{
-				value.Tag,
-				value.Payload,
-			},
-		}, true
-	default:
-		return objectMember{}, false
-	}
-}
-
 func canonicalDecimalString(value *Decimal) string {
 	var reduced Decimal
 	reduced.Reduce(value)
 	return reduced.Text('f')
-}
-
-func isLowerHexByte(value byte) bool {
-	return (value >= '0' && value <= '9') || (value >= 'a' && value <= 'f')
 }

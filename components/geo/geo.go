@@ -524,7 +524,7 @@ func Valid(value any) bool {
 	case "Point":
 		return validPosition(object["coordinates"])
 	case "MultiPoint", "LineString":
-		return validPositionArray(object["coordinates"])
+		return validNestedPositions(object["coordinates"], 1)
 	case "MultiLineString", "Polygon":
 		return validNestedPositions(object["coordinates"], 2)
 	case "MultiPolygon":
@@ -573,19 +573,6 @@ func validNestedPositions(value any, depth int) bool {
 				return false
 			}
 		} else if !validNestedPositions(value, depth-1) {
-			return false
-		}
-	}
-	return true
-}
-
-func validPositionArray(value any) bool {
-	values, ok := value.([]any)
-	if !ok || len(values) == 0 {
-		return false
-	}
-	for _, value := range values {
-		if !validPosition(value) {
 			return false
 		}
 	}

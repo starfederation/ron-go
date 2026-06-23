@@ -8,10 +8,6 @@ import (
 	"unicode/utf8"
 )
 
-func writeValue(buf *bytes.Buffer, value any, indent string, depth int, canonical bool) {
-	writeValueWithCustom(buf, value, indent, depth, canonical, nil)
-}
-
 func writeValueWithCustom(buf *bytes.Buffer, value any, indent string, depth int, canonical bool, renderers []CustomRenderFunc) {
 	if member, ok := typedTaggedMemberWithCustom(value, renderers); ok {
 		writeTaggedObjectWithCustom(buf, member, indent, depth, canonical, renderers)
@@ -50,10 +46,6 @@ func writeValueWithCustom(buf *bytes.Buffer, value any, indent string, depth int
 	}
 }
 
-func writeObject(buf *bytes.Buffer, object any, indent string, depth int, canonical bool) {
-	writeObjectWithCustom(buf, object, indent, depth, canonical, nil)
-}
-
 func writeObjectWithCustom(buf *bytes.Buffer, object any, indent string, depth int, canonical bool, renderers []CustomRenderFunc) {
 	members := objectMembers(object, canonical)
 	if len(members) == 0 {
@@ -81,10 +73,6 @@ func writeObjectWithCustom(buf *bytes.Buffer, object any, indent string, depth i
 	buf.WriteByte('}')
 }
 
-func writeTaggedObject(buf *bytes.Buffer, member objectMember, indent string, depth int, canonical bool) {
-	writeTaggedObjectWithCustom(buf, member, indent, depth, canonical, nil)
-}
-
 func writeTaggedObjectWithCustom(buf *bytes.Buffer, member objectMember, indent string, depth int, canonical bool, renderers []CustomRenderFunc) {
 	buf.WriteByte('{')
 	buf.WriteString(renderString(member.Key, true))
@@ -95,10 +83,6 @@ func writeTaggedObjectWithCustom(buf *bytes.Buffer, member objectMember, indent 
 		writeValueWithCustom(buf, member.Value, indent, depth, canonical, renderers)
 	}
 	buf.WriteByte('}')
-}
-
-func writeObjectMembers(buf *bytes.Buffer, members []objectMember, indent string, depth int, canonical bool) {
-	writeObjectMembersWithCustom(buf, members, indent, depth, canonical, nil)
 }
 
 func writeObjectMembersWithCustom(buf *bytes.Buffer, members []objectMember, indent string, depth int, canonical bool, renderers []CustomRenderFunc) {
@@ -114,10 +98,6 @@ func writeObjectMembersWithCustom(buf *bytes.Buffer, members []objectMember, ind
 }
 
 type multilineArray []any
-
-func writeArray(buf *bytes.Buffer, array []any, indent string, depth int, canonical bool) {
-	writeArrayWithCustom(buf, array, indent, depth, canonical, nil)
-}
 
 func writeArrayWithCustom(buf *bytes.Buffer, array []any, indent string, depth int, canonical bool, renderers []CustomRenderFunc) {
 	if len(array) == 0 {
@@ -148,10 +128,6 @@ func writeArrayWithCustom(buf *bytes.Buffer, array []any, indent string, depth i
 	buf.WriteByte(']')
 }
 
-func writeMultilineArray(buf *bytes.Buffer, array []any, indent string, depth int, canonical bool) {
-	writeMultilineArrayWithCustom(buf, array, indent, depth, canonical, nil)
-}
-
 func writeMultilineArrayWithCustom(buf *bytes.Buffer, array []any, indent string, depth int, canonical bool, renderers []CustomRenderFunc) {
 	if len(array) == 0 {
 		buf.WriteString("[]")
@@ -170,10 +146,6 @@ func writeMultilineArrayWithCustom(buf *bytes.Buffer, array []any, indent string
 	buf.WriteByte(']')
 }
 
-func shouldInlineObject(members []objectMember, canonical bool) bool {
-	return shouldInlineObjectWithCustom(members, canonical, nil)
-}
-
 func shouldInlineObjectWithCustom(members []objectMember, canonical bool, renderers []CustomRenderFunc) bool {
 	if len(members) != 1 {
 		return false
@@ -189,10 +161,6 @@ func shouldInlineObjectWithCustom(members []objectMember, canonical bool, render
 	return size <= 80
 }
 
-func renderTypedTaggedValue(value any, canonical bool) (string, bool) {
-	return renderTypedTaggedValueWithCustom(value, canonical, nil)
-}
-
 func renderTypedTaggedValueWithCustom(value any, canonical bool, renderers []CustomRenderFunc) (string, bool) {
 	member, ok := typedTaggedMemberWithCustom(value, renderers)
 	if !ok {
@@ -203,10 +171,6 @@ func renderTypedTaggedValueWithCustom(value any, canonical bool, renderers []Cus
 		return "", false
 	}
 	return "{" + renderString(member.Key, true) + " " + payload + "}", true
-}
-
-func shouldInlineArray(array []any, canonical bool) bool {
-	return shouldInlineArrayWithCustom(array, canonical, nil)
 }
 
 func shouldInlineArrayWithCustom(array []any, canonical bool, renderers []CustomRenderFunc) bool {
@@ -221,10 +185,6 @@ func shouldInlineArrayWithCustom(array []any, canonical bool, renderers []Custom
 		size += len(renderScalarWithCustom(value, canonical, renderers))
 	}
 	return size <= 80
-}
-
-func canInlineValue(value any, canonical bool) bool {
-	return canInlineValueWithCustom(value, canonical, nil)
 }
 
 func canInlineValueWithCustom(value any, canonical bool, renderers []CustomRenderFunc) bool {
@@ -242,10 +202,6 @@ func canInlineValueWithCustom(value any, canonical bool, renderers []CustomRende
 	default:
 		return false
 	}
-}
-
-func renderInlineValue(value any, canonical bool) (string, bool) {
-	return renderInlineValueWithCustom(value, canonical, nil)
 }
 
 func renderInlineValueWithCustom(value any, canonical bool, renderers []CustomRenderFunc) (string, bool) {
@@ -420,8 +376,9 @@ type objectMember struct {
 }
 
 type orderedObject struct {
-	Members []objectMember
-	Index   map[string]int
+	Members   []objectMember
+	Index     map[string]int
+	NeedsSort bool
 }
 
 func (o *orderedObject) Set(key string, value any) {
@@ -450,6 +407,9 @@ func (o *orderedObject) Set(key string, value any) {
 		}
 	}
 
+	if len(o.Members) > 0 && !rfc8785StringLess(o.Members[len(o.Members)-1].Key, key) {
+		o.NeedsSort = true
+	}
 	if o.Index != nil {
 		o.Index[key] = len(o.Members)
 	}
@@ -472,18 +432,15 @@ func objectMembers(value any, canonical bool) []objectMember {
 		sortObjectMembers(members)
 		return members
 	case orderedObject:
-		members := append([]objectMember(nil), value.Members...)
-		if canonical {
-			sortObjectMembers(members)
+		if !canonical || !value.NeedsSort {
+			return value.Members
 		}
+		members := append([]objectMember(nil), value.Members...)
+		sortObjectMembers(members)
 		return members
 	default:
 		panic("unsupported object")
 	}
-}
-
-func writeCompactValue(buf *bytes.Buffer, value any, top, canonical bool) {
-	writeCompactValueWithCustom(buf, value, top, canonical, nil)
 }
 
 func writeCompactValueWithCustom(buf *bytes.Buffer, value any, top, canonical bool, renderers []CustomRenderFunc) {

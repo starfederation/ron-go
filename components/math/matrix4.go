@@ -563,18 +563,8 @@ func (m *Matrix4[T]) MakePerspective(left, right, top, bottom, near, far T) *Mat
 	a := (right + left) / (right - left)
 	b := (top + bottom) / (top - bottom)
 
-	var c, d T
-	switch coordinateSystem {
-	case CoordinateSystemWebGL:
-		c = -(far + near) / (far - near)
-		d = -(2 * far * near) / (far - near)
-	case CoordinateSystemWebGPU:
-		c = -far / (far - near)
-		d = -far * near / (far - near)
-	default:
-		panic("invalid coordinate system")
-
-	}
+	c := -(far + near) / (far - near)
+	d := -(2 * far * near) / (far - near)
 
 	m.Set(
 		x, 0, a, 0,
