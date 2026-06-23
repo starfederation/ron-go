@@ -561,9 +561,7 @@ func childIndex[T Float](cx, cy T, point Vector2[T]) int {
 // the furthest point from the query point in the list, hence maxHeap.
 // When we find a point closer than the furthest away, we remove
 // furthest and add the new point to the heap.
-type maxHeap[T Float] []heapItem[T]
-
-type heapItem[T Float] struct {
+type maxHeap[T Float] []struct {
 	point    Vector2er[T]
 	distance T
 }

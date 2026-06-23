@@ -92,7 +92,6 @@ func (p *parser) writeJSONValueCurrent(buf *bytes.Buffer, prefix, indent string,
 		p.pos++
 		members := jsonMembers{Values: make([]jsonMember, 0, 8)}
 		var values bytes.Buffer
-		values.Grow(128)
 		for {
 			p.skipWhitespace()
 			if p.pos == len(p.src) {

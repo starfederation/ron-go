@@ -90,8 +90,16 @@ func (opts optionState) parseColorPayload(tag string, payload any) (any, error) 
 		return nil, newError("invalid #clr payload")
 	}
 	space := ColorSpace(spaceName)
-	channelCount, ok := colorSpaceChannelCount(space)
-	if !ok || len(values) != channelCount+1 {
+	var channelCount int
+	switch space {
+	case ColorSpaceRGB, ColorSpaceHSL, ColorSpaceHSV, ColorSpaceHWB, ColorSpaceLAB, ColorSpaceLCH, ColorSpaceOKLAB, ColorSpaceOKLCH, ColorSpaceXYZ:
+		channelCount = 3
+	case ColorSpaceRGBA, ColorSpaceHSLA, ColorSpaceHSVA, ColorSpaceHWBA, ColorSpaceLABA, ColorSpaceLCHA, ColorSpaceOKLABA, ColorSpaceOKLCHA, ColorSpaceXYZA:
+		channelCount = 4
+	default:
+		return nil, newError("invalid #clr payload")
+	}
+	if len(values) != channelCount+1 {
 		return nil, newError("invalid #clr payload")
 	}
 	channels := make([]float64, channelCount)
@@ -117,48 +125,6 @@ func (opts optionState) parseColorPayload(tag string, payload any) (any, error) 
 	}, nil
 }
 
-func colorTaggedMember(value any) (objectMember, bool) {
-	switch value := value.(type) {
-	case Color:
-		return colorMember(value), true
-	case *colorlib.OKLCH:
-		if value == nil {
-			return objectMember{}, false
-		}
-		return colorMember(Color{
-			Space: ColorSpaceOKLCH,
-			Channels: []float64{
-				value.L,
-				value.C,
-				value.H,
-			},
-			Value: value,
-		}), true
-	case colorlib.Color:
-		if value == nil {
-			return objectMember{}, false
-		}
-		oklch := colorlib.ToOKLCH(value)
-		space := ColorSpaceOKLCH
-		channels := []float64{
-			oklch.L,
-			oklch.C,
-			oklch.H,
-		}
-		if oklch.Alpha() != 1 {
-			space = ColorSpaceOKLCHA
-			channels = append(channels, oklch.Alpha())
-		}
-		return colorMember(Color{
-			Space:    space,
-			Channels: channels,
-			Value:    value,
-		}), true
-	default:
-		return objectMember{}, false
-	}
-}
-
 func colorMember(value Color) objectMember {
 	payload := make([]any, 0, len(value.Channels)+1)
 	payload = append(payload, string(value.Space))
@@ -168,17 +134,6 @@ func colorMember(value Color) objectMember {
 	return objectMember{
 		Key:   "#clr",
 		Value: payload,
-	}
-}
-
-func colorSpaceChannelCount(space ColorSpace) (int, bool) {
-	switch space {
-	case ColorSpaceRGB, ColorSpaceHSL, ColorSpaceHSV, ColorSpaceHWB, ColorSpaceLAB, ColorSpaceLCH, ColorSpaceOKLAB, ColorSpaceOKLCH, ColorSpaceXYZ:
-		return 3, true
-	case ColorSpaceRGBA, ColorSpaceHSLA, ColorSpaceHSVA, ColorSpaceHWBA, ColorSpaceLABA, ColorSpaceLCHA, ColorSpaceOKLABA, ColorSpaceOKLCHA, ColorSpaceXYZA:
-		return 4, true
-	default:
-		return 0, false
 	}
 }
 

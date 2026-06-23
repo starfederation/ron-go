@@ -7,10 +7,14 @@ import (
 )
 
 type vocabularyManifest struct {
-	Valid           []vocabularyCase        `json:"valid"`
-	Invalid         []vocabularyCase        `json:"invalid"`
-	InvalidProfiles []vocabularyProfileCase `json:"invalidProfiles"`
-	Registry        string                  `json:"registry"`
+	Valid           []vocabularyCase `json:"valid"`
+	Invalid         []vocabularyCase `json:"invalid"`
+	InvalidProfiles []struct {
+		Name    string `json:"name"`
+		Profile string `json:"profile"`
+		Reason  string `json:"reason"`
+	} `json:"invalidProfiles"`
+	Registry string `json:"registry"`
 }
 
 type vocabularyCase struct {
@@ -18,12 +22,6 @@ type vocabularyCase struct {
 	Vocabularies []string `json:"vocabularies"`
 	InputJSON    string   `json:"inputJSON"`
 	ExpectedRON  string   `json:"expectedRON"`
-}
-
-type vocabularyProfileCase struct {
-	Name    string `json:"name"`
-	Profile string `json:"profile"`
-	Reason  string `json:"reason"`
 }
 
 func loadVocabularyManifest(t *testing.T) (string, vocabularyManifest) {

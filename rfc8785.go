@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"unicode/utf16"
+	"unicode/utf8"
 )
 
 func canonicalJSON(src []byte) ([]byte, error) {
@@ -301,14 +302,45 @@ func sortObjectMembers(members []objectMember) {
 }
 
 func rfc8785StringLess(left, right string) bool {
-	leftUTF16 := utf16.Encode([]rune(left))
-	rightUTF16 := utf16.Encode([]rune(right))
-	for i := 0; i < len(leftUTF16) && i < len(rightUTF16); i++ {
-		if leftUTF16[i] != rightUTF16[i] {
-			return leftUTF16[i] < rightUTF16[i]
+	leftIter := utf16StringIterator{text: left}
+	rightIter := utf16StringIterator{text: right}
+	for {
+		leftCode, leftOK := leftIter.next()
+		rightCode, rightOK := rightIter.next()
+		if !leftOK || !rightOK {
+			return !leftOK && rightOK
+		}
+		if leftCode != rightCode {
+			return leftCode < rightCode
 		}
 	}
-	return len(leftUTF16) < len(rightUTF16)
+}
+
+type utf16StringIterator struct {
+	text    string
+	pos     int
+	pending uint16
+}
+
+func (iter *utf16StringIterator) next() (uint16, bool) {
+	if iter.pending != 0 {
+		code := iter.pending
+		iter.pending = 0
+		return code, true
+	}
+	if iter.pos >= len(iter.text) {
+		return 0, false
+	}
+
+	r, size := utf8.DecodeRuneInString(iter.text[iter.pos:])
+	iter.pos += size
+	if r <= 0xffff {
+		return uint16(r), true
+	}
+
+	high, low := utf16.EncodeRune(r)
+	iter.pending = uint16(low)
+	return uint16(high), true
 }
 
 func parseHex4(src []byte) (uint16, bool) {

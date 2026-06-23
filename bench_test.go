@@ -2,15 +2,13 @@ package ron
 
 import (
 	"bytes"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
 )
 
-var (
-	benchmarkResult []byte
-	benchmarkAny    any
-)
+var benchmarkResult []byte
 
 var (
 	benchmarkRON = []byte(func() string {
@@ -208,7 +206,7 @@ func BenchmarkParseRON(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		benchmarkAny = result
+		runtime.KeepAlive(result)
 	}
 }
 
@@ -218,7 +216,7 @@ func BenchmarkRenderRONCompact(b *testing.B) {
 	for b.Loop() {
 		var buf bytes.Buffer
 		buf.Grow(len(benchmarkRON))
-		writeCompactValue(&buf, benchmarkValue, true, true)
+		writeCompactValueWithCustom(&buf, benchmarkValue, true, true, nil)
 		benchmarkResult = buf.Bytes()
 	}
 }
@@ -229,7 +227,7 @@ func BenchmarkRenderRONPretty(b *testing.B) {
 	for b.Loop() {
 		var buf bytes.Buffer
 		buf.Grow(len(benchmarkRON) * 2)
-		writeValue(&buf, benchmarkValue, "  ", 0, true)
+		writeValueWithCustom(&buf, benchmarkValue, "  ", 0, true, nil)
 		buf.WriteByte('\n')
 		benchmarkResult = buf.Bytes()
 	}

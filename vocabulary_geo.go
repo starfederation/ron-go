@@ -36,15 +36,6 @@ func (opts optionState) parseGeoPayload(tag string, payload any) (any, error) {
 	return GeoJSON{Data: parsed}, nil
 }
 
-func geoTaggedMember(value any) (objectMember, bool) {
-	switch value := value.(type) {
-	case GeoJSON:
-		return objectMember{Key: "#geo", Value: value.Data}, true
-	default:
-		return objectMember{}, false
-	}
-}
-
 func jsonCompatibleValue(value any) any {
 	switch value := value.(type) {
 	case orderedObject:

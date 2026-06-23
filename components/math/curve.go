@@ -51,12 +51,6 @@ type baseCurve[T Float] struct {
 	needsUpdate        bool
 }
 
-func newBaseCurve[T Float]() *baseCurve[T] {
-	return &baseCurve[T]{
-		ArcLengthDivisions: 200,
-	}
-}
-
 // Virtual base class method to overwrite and implement in subclasses
 //   - t [0 .. 1]
 func (c *baseCurve[T]) Point(t T) *Vector3[T] {
