@@ -333,31 +333,8 @@ type jsonMembers struct {
 }
 
 func (m *jsonMembers) Set(key string, valueStart, valueEnd int) {
-	if m.Index != nil {
-		if idx, ok := m.Index[key]; ok {
-			copy(m.Values[idx:], m.Values[idx+1:])
-			m.Values = m.Values[:len(m.Values)-1]
-			delete(m.Index, key)
-			for i := idx; i < len(m.Values); i++ {
-				m.Index[m.Values[i].Key] = i
-			}
-		}
-	} else if len(m.Values) > 0 {
-		for idx, member := range m.Values {
-			if member.Key == key {
-				copy(m.Values[idx:], m.Values[idx+1:])
-				m.Values = m.Values[:len(m.Values)-1]
-				break
-			}
-		}
-		if len(m.Values) == 8 {
-			m.Index = make(map[string]int, len(m.Values)+1)
-			for i, member := range m.Values {
-				m.Index[member.Key] = i
-			}
-		}
-	}
 	keyASCII := asciiString(key)
+	scanDuplicates := m.NeedsSort
 	if len(m.Values) > 0 {
 		previous := m.Values[len(m.Values)-1]
 		ordered := false
@@ -368,6 +345,33 @@ func (m *jsonMembers) Set(key string, valueStart, valueEnd int) {
 		}
 		if !ordered {
 			m.NeedsSort = true
+			scanDuplicates = true
+		}
+	}
+	if scanDuplicates {
+		if m.Index != nil {
+			if idx, ok := m.Index[key]; ok {
+				copy(m.Values[idx:], m.Values[idx+1:])
+				m.Values = m.Values[:len(m.Values)-1]
+				delete(m.Index, key)
+				for i := idx; i < len(m.Values); i++ {
+					m.Index[m.Values[i].Key] = i
+				}
+			}
+		} else {
+			for idx, member := range m.Values {
+				if member.Key == key {
+					copy(m.Values[idx:], m.Values[idx+1:])
+					m.Values = m.Values[:len(m.Values)-1]
+					break
+				}
+			}
+			if len(m.Values) >= 8 {
+				m.Index = make(map[string]int, len(m.Values)+1)
+				for i, member := range m.Values {
+					m.Index[member.Key] = i
+				}
+			}
 		}
 	}
 	if m.Index != nil {
