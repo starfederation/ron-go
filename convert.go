@@ -114,32 +114,53 @@ func ToJSONInto(dst *bytes.Buffer, src []byte, options ...Option) ([]byte, error
 		}
 	}
 
-	p := parser{src: src}
+	scratch := getJSONScratchState()
+	p := parser{
+		src:               src,
+		jsonScratch:       scratch.buffers,
+		jsonMemberScratch: scratch.members,
+	}
+	defer func() {
+		scratch.buffers = p.jsonScratch
+		scratch.members = p.jsonMemberScratch
+		putJSONScratchState(scratch)
+	}()
 	p.skipSpace()
 	if p.pos < len(p.src) && p.src[p.pos] != '{' && p.src[p.pos] != '[' {
 		start := p.pos
 		bufStart := dst.Len()
-		members := jsonMembers{Values: make([]jsonMember, 0, 4)}
-		var values bytes.Buffer
+		memberScratch, memberValues := p.nextJSONMembers()
+		members := jsonMembers{Values: memberValues}
+		values := p.nextJSONScratch()
 		for {
 			p.skipSpace()
 			if p.pos == len(p.src) {
 				if err := p.writeJSONObjectMembers(dst, members.Values, values.Bytes(), opts.prefix, opts.indent, 0, opts.isCanonical); err != nil {
+					p.releaseJSONScratch()
+					p.releaseJSONMembers(memberScratch, members.Values)
 					return nil, err
 				}
+				p.releaseJSONScratch()
+				p.releaseJSONMembers(memberScratch, members.Values)
 				return dst.Bytes(), nil
 			}
 			if p.src[p.pos] == '{' || p.src[p.pos] == '[' {
+				p.releaseJSONScratch()
+				p.releaseJSONMembers(memberScratch, members.Values)
 				break
 			}
 
 			key, err := p.parseKeyCurrent()
 			if err != nil {
+				p.releaseJSONScratch()
+				p.releaseJSONMembers(memberScratch, members.Values)
 				break
 			}
 
 			valueStart := values.Len()
-			if err := p.writeJSONValue(&values, opts.prefix, opts.indent, 1, opts.isCanonical); err != nil {
+			if err := p.writeJSONValue(values, opts.prefix, opts.indent, 1, opts.isCanonical); err != nil {
+				p.releaseJSONScratch()
+				p.releaseJSONMembers(memberScratch, members.Values)
 				break
 			}
 			members.Set(key, valueStart, values.Len())

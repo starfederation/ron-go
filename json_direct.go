@@ -3,6 +3,7 @@ package ron
 import (
 	"bytes"
 	"sort"
+	"sync"
 	"unicode/utf8"
 )
 
@@ -10,6 +11,39 @@ type jsonMember struct {
 	Key        string
 	ValueStart int
 	ValueEnd   int
+}
+
+type jsonScratchState struct {
+	buffers []bytes.Buffer
+	members [][]jsonMember
+}
+
+var jsonScratchPool = sync.Pool{
+	New: func() any {
+		return new(jsonScratchState)
+	},
+}
+
+func getJSONScratchState() *jsonScratchState {
+	return jsonScratchPool.Get().(*jsonScratchState)
+}
+
+func putJSONScratchState(state *jsonScratchState) {
+	for i := range state.buffers {
+		if state.buffers[i].Cap() > 1<<20 {
+			state.buffers[i] = bytes.Buffer{}
+		} else {
+			state.buffers[i].Reset()
+		}
+	}
+	for i := range state.members {
+		if cap(state.members[i]) > 1024 {
+			state.members[i] = nil
+		} else {
+			state.members[i] = state.members[i][:0]
+		}
+	}
+	jsonScratchPool.Put(state)
 }
 
 type jsonMemberSorter []jsonMember
@@ -29,6 +63,34 @@ func (s jsonMemberSorter) Swap(i, j int) {
 func (p *parser) writeJSONValue(buf *bytes.Buffer, prefix, indent string, depth int, canonical bool) error {
 	p.skipSpace()
 	return p.writeJSONValueCurrent(buf, prefix, indent, depth, canonical)
+}
+
+func (p *parser) nextJSONScratch() *bytes.Buffer {
+	idx := p.jsonScratchDepth
+	p.jsonScratchDepth++
+	if idx == len(p.jsonScratch) {
+		p.jsonScratch = append(p.jsonScratch, bytes.Buffer{})
+	}
+	p.jsonScratch[idx].Reset()
+	return &p.jsonScratch[idx]
+}
+
+func (p *parser) releaseJSONScratch() {
+	p.jsonScratchDepth--
+}
+
+func (p *parser) nextJSONMembers() (int, []jsonMember) {
+	idx := p.jsonMemberScratchDepth
+	p.jsonMemberScratchDepth++
+	if idx == len(p.jsonMemberScratch) {
+		p.jsonMemberScratch = append(p.jsonMemberScratch, make([]jsonMember, 0, 8))
+	}
+	return idx, p.jsonMemberScratch[idx][:0]
+}
+
+func (p *parser) releaseJSONMembers(idx int, members []jsonMember) {
+	p.jsonMemberScratch[idx] = members[:0]
+	p.jsonMemberScratchDepth--
 }
 
 func writeJSONQuoted(buf *bytes.Buffer, value string) {
@@ -90,26 +152,36 @@ func (p *parser) writeJSONValueCurrent(buf *bytes.Buffer, prefix, indent string,
 	switch p.src[p.pos] {
 	case '{':
 		p.pos++
-		members := jsonMembers{Values: make([]jsonMember, 0, 8)}
-		var values bytes.Buffer
+		memberScratch, memberValues := p.nextJSONMembers()
+		members := jsonMembers{Values: memberValues}
+		values := p.nextJSONScratch()
 		for {
 			p.skipWhitespace()
 			if p.pos == len(p.src) {
+				p.releaseJSONScratch()
+				p.releaseJSONMembers(memberScratch, members.Values)
 				return p.errorf("expected }")
 			}
 			if p.src[p.pos] == '}' {
 				p.pos++
-				return p.writeJSONObjectMembers(buf, members.Values, values.Bytes(), prefix, indent, depth, canonical)
+				err := p.writeJSONObjectMembers(buf, members.Values, values.Bytes(), prefix, indent, depth, canonical)
+				p.releaseJSONScratch()
+				p.releaseJSONMembers(memberScratch, members.Values)
+				return err
 			}
 
 			key, err := p.parseKeyCurrent()
 			if err != nil {
+				p.releaseJSONScratch()
+				p.releaseJSONMembers(memberScratch, members.Values)
 				return err
 			}
 
 			p.skipWhitespace()
 			valueStart := values.Len()
-			if err := p.writeJSONValueCurrent(&values, prefix, indent, depth+1, canonical); err != nil {
+			if err := p.writeJSONValueCurrent(values, prefix, indent, depth+1, canonical); err != nil {
+				p.releaseJSONScratch()
+				p.releaseJSONMembers(memberScratch, members.Values)
 				return err
 			}
 			members.Set(key, valueStart, values.Len())
