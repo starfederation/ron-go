@@ -68,6 +68,28 @@ println(string(ronBody))
 buf.Reset()
 ```
 
+Go values can be encoded directly to RON without a JSON byte round trip:
+
+```go
+type Person struct {
+    ID   int    `json:"id"`
+    Name string `json:"name"`
+}
+
+ronBody, err := ron.Marshal(Person{ID: 1538289, Name: "Ada"})
+if err != nil {
+    panic(err)
+}
+
+var out bytes.Buffer
+enc := ron.NewEncoder(&out, ron.IsPretty(false))
+if err := enc.Encode(map[string]any{"person": Person{ID: 1538289, Name: "Ada"}}); err != nil {
+    panic(err)
+}
+```
+
+`Marshal` emits pretty RON, `MarshalCompact` emits compact RON, and `NewEncoder` writes one RON value plus a trailing newline per `Encode` call. Reflection supports common JSON-shaped Go values and `json` struct tags including `omitempty`.
+
 Pretty JSON-to-RON renders root object members directly and can map JSON values to tagged RON values:
 
 ```go
