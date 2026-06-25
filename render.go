@@ -340,7 +340,11 @@ func renderString(value string, key bool) string {
 		}
 		i += size
 	}
-	if !structural && (key || (value != "true" && value != "false" && value != "null" && !looksLikeNumberBytes([]byte(value)))) {
+	// Object keys are always strings, so scalar-looking tokens can stay bare.
+	if !structural && key {
+		return value
+	}
+	if !structural && value != "true" && value != "false" && value != "null" && !looksLikeNumberBytes([]byte(value)) {
 		return value
 	}
 
