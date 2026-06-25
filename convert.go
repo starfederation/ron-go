@@ -288,15 +288,6 @@ func FromJSONCompactInto(dst *bytes.Buffer, src []byte) ([]byte, error) {
 	return FromJSONInto(dst, src, IsPretty(false))
 }
 
-// MarshalCompact returns value as compact RON.
-func MarshalCompact(value any) ([]byte, error) {
-	body, err := json.Marshal(value)
-	if err != nil {
-		return nil, err
-	}
-	return FromJSONCompact(body)
-}
-
 func decodeJSON(src []byte, mapper jsonValueMapper) (any, error) {
 	dec := json.NewDecoder(bytes.NewReader(src))
 	dec.UseNumber()
