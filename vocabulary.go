@@ -12,18 +12,19 @@ import (
 	colorlib "github.com/SCKelemen/color"
 )
 
-type vocabularySet uint16
+type vocabularyMask uint16
 
 const (
-	vocabularyCore vocabularySet = 1 << iota
+	vocabularyCore vocabularyMask = 1 << iota
 	vocabularyTime
 	vocabularyNetwork
 	vocabularyMath
 	vocabularySpatial
 	vocabularyGeo
 	vocabularyColor
+	vocabularySet
 
-	defaultVocabularySet = vocabularyCore | vocabularyTime | vocabularyNetwork | vocabularyMath | vocabularySpatial | vocabularyGeo | vocabularyColor
+	defaultVocabularySet = vocabularyCore | vocabularyTime | vocabularyNetwork | vocabularyMath | vocabularySpatial | vocabularyGeo | vocabularyColor | vocabularySet
 )
 
 // EnableVocabularies enables validation for supported typed vocabulary URIs.
@@ -52,6 +53,7 @@ func defaultVocabularies() map[string]struct{} {
 		VocabularySpatialV1: {},
 		VocabularyGeoV1:     {},
 		VocabularyColorV1:   {},
+		VocabularySetV1:     {},
 	}
 }
 
@@ -75,13 +77,15 @@ func (opts *optionState) enableBuiltInVocabulary(uri string) bool {
 		opts.vocabularyMask |= vocabularyGeo
 	case VocabularyColorV1:
 		opts.vocabularyMask |= vocabularyColor
+	case VocabularySetV1:
+		opts.vocabularyMask |= vocabularySet
 	default:
 		return false
 	}
 	return true
 }
 
-func (opts optionState) vocabularyEnabled(vocabulary vocabularySet, uri string) bool {
+func (opts optionState) vocabularyEnabled(vocabulary vocabularyMask, uri string) bool {
 	if opts.vocabularyMask&vocabulary != 0 {
 		return true
 	}
@@ -118,7 +122,7 @@ func (opts optionState) parseVocabularyValue(value any) (any, error) {
 		return value, nil
 	case map[string]any:
 		for key, child := range value {
-			if opts.isCoreTag(key) || opts.isTimeTag(key) || opts.isNetworkTag(key) || opts.isMathTag(key) || opts.isSpatialTag(key) || opts.isGeoTag(key) || opts.isColorTag(key) || opts.isCustomTag(key) {
+			if opts.isCoreTag(key) || opts.isTimeTag(key) || opts.isNetworkTag(key) || opts.isMathTag(key) || opts.isSpatialTag(key) || opts.isGeoTag(key) || opts.isColorTag(key) || opts.isSetTag(key) || opts.isCustomTag(key) {
 				if len(value) != 1 {
 					return nil, newError("typed vocabulary object must have exactly one member")
 				}
@@ -155,7 +159,7 @@ func (opts optionState) parseVocabularyValue(value any) (any, error) {
 
 func (opts optionState) enabledTypedValue(members []objectMember) (string, any, bool) {
 	for _, member := range members {
-		if opts.isCoreTag(member.Key) || opts.isTimeTag(member.Key) || opts.isNetworkTag(member.Key) || opts.isMathTag(member.Key) || opts.isSpatialTag(member.Key) || opts.isGeoTag(member.Key) || opts.isColorTag(member.Key) || opts.isCustomTag(member.Key) {
+		if opts.isCoreTag(member.Key) || opts.isTimeTag(member.Key) || opts.isNetworkTag(member.Key) || opts.isMathTag(member.Key) || opts.isSpatialTag(member.Key) || opts.isGeoTag(member.Key) || opts.isColorTag(member.Key) || opts.isSetTag(member.Key) || opts.isCustomTag(member.Key) {
 			return member.Key, member.Value, true
 		}
 	}
@@ -183,6 +187,9 @@ func (opts optionState) parseTypedPayload(tag string, payload any) (any, error) 
 	}
 	if opts.isColorTag(tag) {
 		return opts.parseColorPayload(tag, payload)
+	}
+	if opts.isSetTag(tag) {
+		return opts.parseSetPayload(tag, payload)
 	}
 	if opts.isCustomTag(tag) {
 		return opts.parseCustomPayload(tag, payload)
@@ -404,6 +411,10 @@ func typedTaggedMemberWithCustom(value any, renderers []CustomRenderFunc) (objec
 		return objectMember{Key: "#geo", Value: value.Data}, true
 	case Color:
 		return colorMember(value), true
+	case Set:
+		return objectMember{Key: "#set", Value: canonicalSetPayload(value)}, true
+	case Uint32BitSet:
+		return objectMember{Key: "#bits", Value: canonicalBitSetPayload(value)}, true
 	case *colorlib.OKLCH:
 		if value == nil {
 			return objectMember{}, false

@@ -38,7 +38,7 @@ func ValidateVocabularyProfile(src []byte, options ...Option) error {
 
 func (opts optionState) supportsVocabulary(uri string) bool {
 	switch uri {
-	case VocabularyCoreV1, VocabularyTimeV1, VocabularyNetworkV1, VocabularyMathV1, VocabularySpatialV1, VocabularyGeoV1, VocabularyColorV1:
+	case VocabularyCoreV1, VocabularyTimeV1, VocabularyNetworkV1, VocabularyMathV1, VocabularySpatialV1, VocabularyGeoV1, VocabularyColorV1, VocabularySetV1:
 		return true
 	default:
 		return opts.isCustomVocabulary(uri)

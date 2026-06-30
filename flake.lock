@@ -19,15 +19,16 @@
     "ron": {
       "flake": false,
       "locked": {
-        "lastModified": 1782411648,
-        "narHash": "sha256-2YyDgTYSV4LwBOmOeJFHScqSvSphyMcGvDepyeIIuZk=",
+        "lastModified": 1782829248,
+        "narHash": "sha256-SiLxSHUiGZYxpJ6A/nFcwn8YrKMX407lNrf7RRN5vU0=",
         "owner": "starfederation",
         "repo": "ron",
-        "rev": "88c70ef09981b1c73d10f8a8710109f04eaa2c49",
+        "rev": "1c5f7fa5a590dce87eaa7fe23c319c4c219e1bde",
         "type": "github"
       },
       "original": {
         "owner": "starfederation",
+        "ref": "v0.1.0",
         "repo": "ron",
         "type": "github"
       }

@@ -21,4 +21,5 @@ Use `ValidateVocabularyProfile` to reject profiles that require unknown or unsup
 | [Spatial](./vocabulary-spatial.md) | `https://ron.dev/vocab/spatial/v1` | `ron.LngLatAlt`, `ron.Box2`, `ron.Box3`, `ron.Sphere`, `ron.Plane`, `ron.Ray`, `ron.Line2`, `ron.Line3`, `ron.Triangle`, `ron.Frustum`, `ron.SphericalHarmonics3`, `ron.VoxelSet` | Local `components/math` |
 | [GeoJSON](./vocabulary-geo.md) | `https://ron.dev/vocab/geo/v1` | `ron.GeoJSON` | Local `components/geo` |
 | [Color](./vocabulary-color.md) | `https://ron.dev/vocab/color/v1` | `ron.Color` | `github.com/SCKelemen/color` |
+| [Set](./vocabulary-set.md) | `https://ron.dev/vocab/set/v1` | `ron.Set`, `ron.Uint32BitSet` | None |
 | [Custom](./vocabulary-custom.md) | Option-scoped | `ron.CustomValue`, application types | None |
