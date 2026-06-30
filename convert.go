@@ -12,7 +12,7 @@ type Option func(*optionState)
 type optionState struct {
 	formatOptions
 	jsonValueMapper       jsonValueMapper
-	vocabularyMask        vocabularySet
+	vocabularyMask        vocabularyMask
 	vocabularies          map[string]struct{}
 	customVocabularies    map[string]CustomVocabulary
 	customVocabularyOrder []string
