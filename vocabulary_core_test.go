@@ -17,7 +17,7 @@ func TestCoreVocabularyFixtures(t *testing.T) {
 
 		t.Run(tc.Name, func(t *testing.T) {
 			input := readConformanceFile(t, root, tc.InputJSON)
-			expected := readConformanceFile(t, root, tc.ExpectedRON)
+			expected := readRONValueFixture(t, root, tc.ExpectedRON)
 
 			got, err := FromJSON(input, EnableVocabularies(VocabularyCoreV1))
 			if err != nil {
@@ -113,7 +113,7 @@ func TestCoreVocabularyRendersAPDDecimal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FromJSON #dec: %v", err)
 	}
-	assertBytesEqual(t, []byte("price {#dec '1.23'}\n"), got)
+	assertBytesEqual(t, []byte("price {#dec '1.23'}"), got)
 
 	var buf []byte
 	buf = append(buf, renderScalar(&value, true)...)

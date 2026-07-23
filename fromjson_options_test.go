@@ -7,7 +7,7 @@ func TestFromJSONPrettyRootObjectsElideBraces(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FromJSON pretty root object: %v", err)
 	}
-	assertBytesEqual(t, []byte("status ok\n"), got)
+	assertBytesEqual(t, []byte("status ok"), got)
 }
 
 func TestFromJSONValueMapperCanRenderTaggedRONValues(t *testing.T) {
@@ -34,6 +34,6 @@ func TestFromJSONValueMapperCanRenderTaggedRONValues(t *testing.T) {
 		t.Fatalf("FromJSON tagged values: %v", err)
 	}
 
-	want := []byte("tx {# tx-48830}\ncommitted {#time 2026-06-13T00:00:00Z}\nreactorId {# reactor-BY}\n")
+	want := []byte("tx {# tx-48830}\ncommitted {#time 2026-06-13T00:00:00Z}\nreactorId {# reactor-BY}")
 	assertBytesEqual(t, want, got)
 }

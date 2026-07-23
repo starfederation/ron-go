@@ -86,7 +86,7 @@ func TestConformanceValid(t *testing.T) {
 			jsonInput := readConformanceFile(t, root, tc.JSONInput)
 			expectedCompactJSON := readConformanceFile(t, root, tc.ExpectedCompactJSON)
 			expectedPrettyJSON := readConformanceFile(t, root, tc.ExpectedPrettyJSON)
-			expectedPrettyRON := readConformanceFile(t, root, tc.ExpectedPrettyRON)
+			expectedPrettyRON := readRONValueFixture(t, root, tc.ExpectedPrettyRON)
 			expectedCompactRON := readConformanceFile(t, root, tc.ExpectedCompactRON)
 
 			for _, ronInput := range tc.RONInputs {
@@ -148,7 +148,7 @@ func TestConformanceJSONToRONRendering(t *testing.T) {
 	for _, tc := range manifest.JSONToRONRendering {
 		t.Run(tc.Name, func(t *testing.T) {
 			input := readConformanceFile(t, root, tc.JSONInput)
-			expected := readConformanceFile(t, root, tc.ExpectedRON)
+			expected := readRONValueFixture(t, root, tc.ExpectedRON)
 
 			options := []Option{
 				IsPretty(tc.Options.IsPretty),
@@ -382,7 +382,7 @@ func TestRONBufferReuse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FromJSONInto: %v", err)
 	}
-	assertBytesEqual(t, []byte("a 1\n"), pretty)
+	assertBytesEqual(t, []byte("a 1"), pretty)
 
 	buf.Reset()
 	compact, err := FromJSONCompactInto(&buf, []byte(`{"b":2}`))
@@ -446,6 +446,11 @@ func parseFloat64Hex(t *testing.T, value string) float64 {
 func readConformanceFile(t *testing.T, root, path string) []byte {
 	t.Helper()
 	return readFile(t, filepath.Join(root, filepath.FromSlash(path)))
+}
+
+func readRONValueFixture(t *testing.T, root, path string) []byte {
+	t.Helper()
+	return bytes.TrimSuffix(readConformanceFile(t, root, path), []byte("\n"))
 }
 
 func readFile(t *testing.T, path string) []byte {
@@ -532,7 +537,7 @@ func TestFromJSONOptionsControlPrettyAndCanonicalRON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FromJSON pretty non-canonical: %v", err)
 	}
-	assertBytesEqual(t, []byte("b 1\na 2\n"), nonCanonicalPretty)
+	assertBytesEqual(t, []byte("b 1\na 2"), nonCanonicalPretty)
 }
 
 func TestNonCanonicalDuplicateKeysMoveSurvivorToLastPosition(t *testing.T) {

@@ -74,13 +74,14 @@ func MapJSONValues(mapper func(path []JSONPathSegment, value any) (any, bool)) O
 	}
 }
 
-// ToJSON converts RON to compact JSON unless pretty output is requested.
+// ToJSON converts RON to one JSON value without a trailing newline.
+// Output is compact unless pretty output is requested.
 func ToJSON(src []byte, options ...Option) ([]byte, error) {
 	var buf bytes.Buffer
 	return ToJSONInto(&buf, src, options...)
 }
 
-// ToJSONInto appends RON converted to JSON to dst.
+// ToJSONInto appends one RON value converted to JSON to dst without a trailing newline.
 func ToJSONInto(dst *bytes.Buffer, src []byte, options ...Option) ([]byte, error) {
 	if dst == nil {
 		return ToJSON(src, options...)
@@ -209,13 +210,14 @@ func Indent(indent string) Option {
 	}
 }
 
-// FromJSON converts JSON to pretty RON unless compact output is requested.
+// FromJSON converts JSON to one RON value without a trailing newline.
+// Output is pretty unless compact output is requested.
 func FromJSON(src []byte, options ...Option) ([]byte, error) {
 	var buf bytes.Buffer
 	return FromJSONInto(&buf, src, options...)
 }
 
-// FromJSONInto appends JSON converted to RON to dst.
+// FromJSONInto appends one JSON value converted to RON to dst without a trailing newline.
 func FromJSONInto(dst *bytes.Buffer, src []byte, options ...Option) ([]byte, error) {
 	if dst == nil {
 		return FromJSON(src, options...)
@@ -265,11 +267,9 @@ func FromJSONInto(dst *bytes.Buffer, src []byte, options ...Option) ([]byte, err
 		dst.Grow(len(src) * 2)
 		if object, ok := value.(orderedObject); ok && len(object.Members) > 0 {
 			writeObjectMembersWithCustom(dst, objectMembers(object, opts.isCanonical), opts.indent, -1, opts.isCanonical, opts.customRenderersList())
-			dst.WriteByte('\n')
 			return dst.Bytes(), nil
 		}
 		writeValueWithCustom(dst, value, opts.indent, 0, opts.isCanonical, opts.customRenderersList())
-		dst.WriteByte('\n')
 		return dst.Bytes(), nil
 	}
 
@@ -278,12 +278,12 @@ func FromJSONInto(dst *bytes.Buffer, src []byte, options ...Option) ([]byte, err
 	return dst.Bytes(), nil
 }
 
-// FromJSONCompact converts JSON to compact RON.
+// FromJSONCompact converts JSON to one compact RON value without a trailing newline.
 func FromJSONCompact(src []byte) ([]byte, error) {
 	return FromJSON(src, IsPretty(false))
 }
 
-// FromJSONCompactInto appends JSON converted to compact RON to dst.
+// FromJSONCompactInto appends one JSON value converted to compact RON to dst without a trailing newline.
 func FromJSONCompactInto(dst *bytes.Buffer, src []byte) ([]byte, error) {
 	return FromJSONInto(dst, src, IsPretty(false))
 }
