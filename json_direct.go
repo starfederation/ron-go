@@ -43,7 +43,7 @@ func (s jsonMemberSorter) Swap(i, j int) {
 }
 
 func (p *parser) writeJSONValue(buf *bytes.Buffer, prefix, indent string, depth int, canonical bool) error {
-	p.skipSpace()
+	p.skipWhitespace()
 	return p.writeJSONValueCurrent(buf, prefix, indent, depth, canonical)
 }
 
@@ -238,7 +238,11 @@ func (p *parser) writeJSONValueCurrent(buf *bytes.Buffer, prefix, indent string,
 			buf.WriteByte('\n')
 		}
 	case ',':
-		writeJSONQuoted(buf, p.parseCommaPrefixedToken())
+		value, err := p.parseCommaPrefixedToken()
+		if err != nil {
+			return err
+		}
+		writeJSONQuoted(buf, value)
 		return nil
 	case '\'':
 		value, err := p.parseApostropheValue()
@@ -271,20 +275,11 @@ func (p *parser) writeJSONValueCurrent(buf *bytes.Buffer, prefix, indent string,
 	case looksLikeNumberBytes(token):
 		buf.Write(token)
 	default:
-		jsonSafeASCII := true
-		for _, b := range token {
-			if b < 0x20 || b == '\\' || b == '"' || b >= utf8.RuneSelf {
-				jsonSafeASCII = false
-				break
-			}
+		value, err := p.decodeStringSpan(start, end)
+		if err != nil {
+			return err
 		}
-		if jsonSafeASCII {
-			buf.WriteByte('"')
-			buf.Write(token)
-			buf.WriteByte('"')
-		} else {
-			writeJSONQuoted(buf, bytesToString(token))
-		}
+		writeJSONQuoted(buf, value)
 	}
 	return nil
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"unicode"
+	"unicode/utf16"
 	"unicode/utf8"
 	"unsafe"
 )
@@ -56,7 +57,8 @@ func parse(src []byte) (any, error) {
 		p.skipSpace()
 		key, err := p.parseKeyCurrent()
 		if err == nil {
-			value, err := p.parseValue()
+			p.skipWhitespace()
+			value, err := p.parseValueCurrent()
 			if err == nil {
 				object := map[string]any{
 					key: value,
@@ -70,7 +72,8 @@ func parse(src []byte) (any, error) {
 						break
 					}
 
-					value, err := p.parseValue()
+					p.skipWhitespace()
+					value, err := p.parseValueCurrent()
 					if err != nil {
 						ok = false
 						break
@@ -158,7 +161,7 @@ func (p *parser) parseValueCurrent() (any, error) {
 			p.skipSeparators()
 		}
 	case ',':
-		return p.parseCommaPrefixedToken(), nil
+		return p.parseCommaPrefixedToken()
 	case '\'':
 		return p.parseApostropheValue()
 	case '"':
@@ -182,7 +185,7 @@ func (p *parser) parseValueCurrent() (any, error) {
 	if looksLikeNumberBytes(token) {
 		return ronNumber(bytesToString(token)), nil
 	}
-	return bytesToString(token), nil
+	return p.decodeStringSpan(start, end)
 }
 
 func (p *parser) parseKeyCurrent() (string, error) {
@@ -191,7 +194,7 @@ func (p *parser) parseKeyCurrent() (string, error) {
 	}
 	switch p.src[p.pos] {
 	case ',':
-		return p.parseCommaPrefixedToken(), nil
+		return p.parseCommaPrefixedToken()
 	case '\'':
 		return p.parseApostropheValue()
 	case '"':
@@ -204,7 +207,7 @@ func (p *parser) parseKeyCurrent() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return bytesToString(p.src[start:end]), nil
+	return p.decodeStringSpan(start, end)
 }
 
 func (p *parser) parseApostropheValue() (string, error) {
@@ -252,7 +255,7 @@ func (p *parser) parseQuotedString() (string, error) {
 			p.pos += count
 			return "", nil
 		}
-		if count >= 5 && (count-2)%3 == 0 {
+		if quote == '\'' && count >= 5 && (count-2)%3 == 0 {
 			p.pos += count
 			return bytesToString(bytes.Repeat([]byte{quote}, (count-2)/3)), nil
 		}
@@ -260,53 +263,200 @@ func (p *parser) parseQuotedString() (string, error) {
 
 	p.pos += count
 	start := p.pos
-	for {
-		if p.pos == len(p.src) {
-			return "", p.errorf("unterminated string")
+	for p.pos < len(p.src) {
+		b := p.src[p.pos]
+		if b == '\\' {
+			_, next, err := p.decodeEscape(p.pos)
+			if err != nil {
+				return "", err
+			}
+			p.pos = next
+			continue
+		}
+		if b < 0x20 {
+			return "", p.errorf("unescaped control character in string")
+		}
+		if b == quote {
+			run := 0
+			for p.pos+run < len(p.src) && p.src[p.pos+run] == quote {
+				run++
+			}
+			if run >= count {
+				end := p.pos
+				p.pos += count
+				return p.decodeStringSpan(start, end)
+			}
+			if quote == '"' {
+				return "", p.errorf("unescaped double quote in string")
+			}
+			p.pos += run
+			continue
+		}
+		if b == '"' {
+			return "", p.errorf("unescaped double quote in string")
+		}
+		if b < utf8.RuneSelf {
+			p.pos++
+			continue
 		}
 
-		next := bytes.IndexByte(p.src[p.pos:], quote)
-		if next < 0 {
-			p.pos = len(p.src)
-			return "", p.errorf("unterminated string")
+		_, size := utf8.DecodeRune(p.src[p.pos:])
+		if size == 1 {
+			return "", p.errorf("invalid UTF-8 in string")
 		}
-
-		p.pos += next
-		run := 0
-		for p.pos+run < len(p.src) && p.src[p.pos+run] == quote {
-			run++
-		}
-		if run >= count {
-			value := p.src[start:p.pos]
-			p.pos += count
-			return bytesToString(value), nil
-		}
-
-		p.pos += run
+		p.pos += size
 	}
+	return "", p.errorf("unterminated string")
 }
 
-func (p *parser) parseCommaPrefixedToken() string {
+func (p *parser) parseCommaPrefixedToken() (string, error) {
 	start := p.pos
 	p.pos++
-	for p.pos < len(p.src) && !isDelimiter(p.src[p.pos]) {
-		p.pos++
+	if err := p.scanTokenEnd(); err != nil {
+		return "", err
 	}
-	return bytesToString(p.src[start:p.pos])
+	return p.decodeStringSpan(start, p.pos)
 }
 
 func (p *parser) parseTokenSpan() (int, int, error) {
 	start := p.pos
-	for p.pos < len(p.src) {
-		if b := p.src[p.pos]; b < utf8.RuneSelf && asciiDelimiter[b] {
-			break
-		}
-		p.pos++
+	if err := p.scanTokenEnd(); err != nil {
+		return 0, 0, err
 	}
 	if start == p.pos {
 		return 0, 0, p.errorf("expected token")
 	}
 	return start, p.pos, nil
+}
+
+func (p *parser) scanTokenEnd() error {
+	for p.pos < len(p.src) {
+		b := p.src[p.pos]
+		if b == '\\' {
+			_, next, err := p.decodeEscape(p.pos)
+			if err != nil {
+				return err
+			}
+			p.pos = next
+			continue
+		}
+		if b < utf8.RuneSelf {
+			if asciiDelimiter[b] {
+				return nil
+			}
+			if b < 0x20 {
+				return p.errorf("unescaped control character in string")
+			}
+			p.pos++
+			continue
+		}
+
+		r, size := utf8.DecodeRune(p.src[p.pos:])
+		if size == 1 {
+			return p.errorf("invalid UTF-8 in string")
+		}
+		if unicode.IsSpace(r) {
+			return nil
+		}
+		p.pos += size
+	}
+	return nil
+}
+
+func (p *parser) decodeStringSpan(start, end int) (string, error) {
+	firstEscape := bytes.IndexByte(p.src[start:end], '\\')
+	if firstEscape < 0 {
+		return bytesToString(p.src[start:end]), nil
+	}
+
+	decoded := make([]byte, 0, end-start)
+	pos := start
+	for pos < end {
+		nextEscape := bytes.IndexByte(p.src[pos:end], '\\')
+		if nextEscape < 0 {
+			decoded = append(decoded, p.src[pos:end]...)
+			break
+		}
+
+		escapePos := pos + nextEscape
+		decoded = append(decoded, p.src[pos:escapePos]...)
+		r, next, err := p.decodeEscape(escapePos)
+		if err != nil {
+			return "", err
+		}
+		decoded = utf8.AppendRune(decoded, r)
+		pos = next
+	}
+	return string(decoded), nil
+}
+
+func (p *parser) decodeEscape(pos int) (rune, int, error) {
+	if pos+1 >= len(p.src) {
+		return 0, 0, p.errorAt("truncated escape", pos)
+	}
+
+	switch p.src[pos+1] {
+	case '"', '\\', '/':
+		return rune(p.src[pos+1]), pos + 2, nil
+	case 'b':
+		return '\b', pos + 2, nil
+	case 'f':
+		return '\f', pos + 2, nil
+	case 'n':
+		return '\n', pos + 2, nil
+	case 'r':
+		return '\r', pos + 2, nil
+	case 't':
+		return '\t', pos + 2, nil
+	case 'u':
+	default:
+		return 0, 0, p.errorAt("unknown escape", pos)
+	}
+
+	decodeHex4 := func(start int) (uint16, int) {
+		var value uint16
+		for i := start; i < start+4; i++ {
+			var digit byte
+			switch b := p.src[i]; {
+			case b >= '0' && b <= '9':
+				digit = b - '0'
+			case b >= 'a' && b <= 'f':
+				digit = b - 'a' + 10
+			case b >= 'A' && b <= 'F':
+				digit = b - 'A' + 10
+			default:
+				return 0, i
+			}
+			value = value<<4 | uint16(digit)
+		}
+		return value, -1
+	}
+
+	if pos+6 > len(p.src) {
+		return 0, 0, p.errorAt("truncated unicode escape", pos)
+	}
+	value, invalid := decodeHex4(pos + 2)
+	if invalid >= 0 {
+		return 0, 0, p.errorAt("non-hex unicode escape", invalid)
+	}
+	next := pos + 6
+	if value >= 0xd800 && value <= 0xdbff {
+		if next+6 > len(p.src) || p.src[next] != '\\' || p.src[next+1] != 'u' {
+			return 0, 0, p.errorAt("unpaired high surrogate", pos)
+		}
+		low, invalid := decodeHex4(next + 2)
+		if invalid >= 0 {
+			return 0, 0, p.errorAt("non-hex unicode escape", invalid)
+		}
+		if low < 0xdc00 || low > 0xdfff {
+			return 0, 0, p.errorAt("unpaired high surrogate", pos)
+		}
+		return utf16.DecodeRune(rune(value), rune(low)), next + 6, nil
+	}
+	if value >= 0xdc00 && value <= 0xdfff {
+		return 0, 0, p.errorAt("unpaired low surrogate", pos)
+	}
+	return rune(value), next, nil
 }
 
 func (p *parser) skipSpace() {
@@ -368,9 +518,13 @@ func (p *parser) skipSeparators() {
 }
 
 func (p *parser) errorf(msg string) error {
+	return p.errorAt(msg, p.pos)
+}
+
+func (p *parser) errorAt(msg string, pos int) error {
 	return &parseError{
 		msg: msg,
-		pos: p.pos,
+		pos: pos,
 	}
 }
 

@@ -323,11 +323,15 @@ func renderScalarWithCustom(value any, canonical bool, renderers []CustomRenderF
 
 func renderString(value string, key bool) string {
 	structural := value == ""
-	for i := 0; !structural && i < len(value); {
+	needsEscaping := false
+	for i := 0; i < len(value); {
 		b := value[i]
 		if b < utf8.RuneSelf {
+			if b == '"' || b == '\\' || b < 0x20 {
+				needsEscaping = true
+			}
 			switch b {
-			case '{', '}', '[', ']', '"', '\'', ',', ' ', '\t', '\n', '\r':
+			case '{', '}', '[', ']', '\'', ',', ' ':
 				structural = true
 			}
 			i++
@@ -340,17 +344,53 @@ func renderString(value string, key bool) string {
 		}
 		i += size
 	}
+
+	escapedValue := value
+	if needsEscaping {
+		const hex = "0123456789abcdef"
+
+		var escaped bytes.Buffer
+		escaped.Grow(len(value))
+		for i := 0; i < len(value); i++ {
+			switch b := value[i]; b {
+			case '"':
+				escaped.WriteString(`\"`)
+			case '\\':
+				escaped.WriteString(`\\`)
+			case '\b':
+				escaped.WriteString(`\b`)
+			case '\f':
+				escaped.WriteString(`\f`)
+			case '\n':
+				escaped.WriteString(`\n`)
+			case '\r':
+				escaped.WriteString(`\r`)
+			case '\t':
+				escaped.WriteString(`\t`)
+			default:
+				if b < 0x20 {
+					escaped.WriteString(`\u00`)
+					escaped.WriteByte(hex[b>>4])
+					escaped.WriteByte(hex[b&0x0f])
+					continue
+				}
+				escaped.WriteByte(b)
+			}
+		}
+		escapedValue = escaped.String()
+	}
+
 	// Object keys are always strings, so scalar-looking tokens can stay bare.
 	if !structural && key {
-		return value
+		return escapedValue
 	}
-	if !structural && value != "true" && value != "false" && value != "null" && !looksLikeNumberBytes([]byte(value)) {
-		return value
+	if !structural && escapedValue != "true" && escapedValue != "false" && escapedValue != "null" && !looksLikeNumberBytes([]byte(escapedValue)) {
+		return escapedValue
 	}
 
 	run := 0
 	longest := 0
-	for _, r := range value {
+	for _, r := range escapedValue {
 		if r == '\'' {
 			run++
 			if run > longest {
@@ -365,7 +405,7 @@ func renderString(value string, key bool) string {
 	for i := range quote {
 		quote[i] = '\''
 	}
-	return string(quote) + value + string(quote)
+	return string(quote) + escapedValue + string(quote)
 }
 
 func writeIndent(buf *bytes.Buffer, indent string, depth int) {
