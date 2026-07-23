@@ -12,7 +12,6 @@ Spatial values use local `components/math` types.
 
 | Tag | Meaning | Go type | External library |
 | --- | --- | --- | --- |
-| `#lla` | longitude, latitude, altitude | `ron.LngLatAlt` with `ron.Vector2` | Local `components/math` |
 | `#sph` | spherical coordinates | `ron.Spherical` | Local `components/math` |
 | `#cyl` | cylindrical coordinates | `ron.Cylindrical` | Local `components/math` |
 | `#bx2` | 2D box | `ron.Box2` | Local `components/math` |
@@ -30,5 +29,4 @@ Spatial values use local `components/math` types.
 ## Type notes
 
 - Spatial distances use meters unless a tag states otherwise.
-- `#lla` stores longitude/latitude in a `ron.Vector2` and altitude separately.
 - `#vox` stores sparse cells as coordinate/value pairs; cell values may contain typed values from enabled vocabularies.

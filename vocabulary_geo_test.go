@@ -44,6 +44,24 @@ func TestGeoVocabularyInvalidFixtures(t *testing.T) {
 	}
 }
 
+func TestGeoVocabularyPointPositionsRoundTrip(t *testing.T) {
+	for _, input := range []string{
+		`{"#geo":{"type":"Point","coordinates":[-73.9857,40.7484]}}`,
+		`{"#geo":{"type":"Point","coordinates":[-73.9857,40.7484,381]}}`,
+	} {
+		ronBody, err := FromJSON([]byte(input))
+		if err != nil {
+			t.Fatalf("FromJSON(%s): %v", input, err)
+		}
+
+		jsonBody, err := ToJSON(ronBody)
+		if err != nil {
+			t.Fatalf("ToJSON(%s): %v", ronBody, err)
+		}
+		assertJSONEqual(t, []byte(input), jsonBody)
+	}
+}
+
 func TestGeoVocabularyParsesNativeValue(t *testing.T) {
 	value, err := decodeJSON([]byte(`{"point":{"#geo":{"type":"Point","coordinates":[-73.9857,40.7484]}}}`), nil)
 	if err != nil {

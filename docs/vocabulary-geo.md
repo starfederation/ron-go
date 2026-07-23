@@ -18,6 +18,11 @@ GeoJSON values use local `components/geo` validation for RFC 7946 geometry, feat
 
 - `#geo` accepts RFC 7946 Geometry, Feature, and FeatureCollection payloads.
 - `Point`, `MultiPoint`, `LineString`, `MultiLineString`, `Polygon`, `MultiPolygon`, `GeometryCollection`, `Feature`, and `FeatureCollection` are supported.
+- Positions contain longitude and latitude, with optional altitude as a third coordinate:
+
+  ```ron
+  {#geo {type Point coordinates [-73.9857 40.7484 381]}}
+  ```
 - `Feature.geometry` may be `null`.
 - `bbox` and foreign members are preserved in the RON value model.
 - Typed values nested inside GeoJSON properties are parsed when their vocabularies are enabled.
