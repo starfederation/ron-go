@@ -358,8 +358,6 @@ func typedTaggedMemberWithCustom(value any, renderers []CustomRenderFunc) (objec
 		return objectMember{Key: "#m3x", Value: floatSliceToAny(value[:])}, true
 	case Matrix4:
 		return objectMember{Key: "#m4x", Value: floatSliceToAny(value[:])}, true
-	case LngLatAlt:
-		return objectMember{Key: "#lla", Value: []any{value.Point.X, value.Point.Y, value.Altitude}}, true
 	case Spherical:
 		return objectMember{Key: "#sph", Value: []any{value.Radius, value.Phi, value.Theta}}, true
 	case Cylindrical:

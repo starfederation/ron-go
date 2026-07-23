@@ -30,7 +30,6 @@ func TestSpatialVocabularyFixtures(t *testing.T) {
 
 func TestSpatialVocabularyParsesNativeValues(t *testing.T) {
 	value, err := decodeJSON([]byte(`{
-		"home":{"#lla":[-73.9857,40.7484,381]},
 		"bounds":{"#bx3":[[0,0,0],[10,10,10]]},
 		"voxels":{"#vox":{"dimensions":3,"origin":{"#vN":[0,0,0]},"cellSize":{"#vN":[1,1,1]},"cells":[]}}
 	}`), nil)
@@ -44,9 +43,6 @@ func TestSpatialVocabularyParsesNativeValues(t *testing.T) {
 	}
 	object := parsed.(orderedObject)
 
-	if got, ok := objectValue(object, "home").(LngLatAlt); !ok || got.Point != (Vector2{X: -73.9857, Y: 40.7484}) || got.Altitude != 381 {
-		t.Fatalf("home type = %T %[1]v", objectValue(object, "home"))
-	}
 	if got, ok := objectValue(object, "bounds").(Box3); !ok || got.Max.X != 10 || got.Max.Y != 10 || got.Max.Z != 10 {
 		t.Fatalf("bounds type = %T %[1]v", objectValue(object, "bounds"))
 	}
@@ -56,7 +52,6 @@ func TestSpatialVocabularyParsesNativeValues(t *testing.T) {
 }
 
 func TestSpatialVocabularyRendersNativeValues(t *testing.T) {
-	assertBytesEqual(t, []byte("{#lla [-73.9857 40.7484 381]}"), []byte(renderScalar(LngLatAlt{Point: Vector2{X: -73.9857, Y: 40.7484}, Altitude: 381}, true)))
 	assertBytesEqual(t, []byte("{#bx2 [[0 0] [10 10]]}"), []byte(renderScalar(Box2{Min: Vector2{X: 0, Y: 0}, Max: Vector2{X: 10, Y: 10}}, true)))
 	assertBytesEqual(t, []byte("{#ln2 [[0 0] [1 1]]}"), []byte(renderScalar(Line2{Start: Vector2{X: 0, Y: 0}, End: Vector2{X: 1, Y: 1}}, true)))
 }

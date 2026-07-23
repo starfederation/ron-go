@@ -7,12 +7,6 @@ const (
 	VocabularySpatialV1 = "https://ron.dev/vocab/spatial/v1"
 )
 
-// LngLatAlt is a spatial vocabulary #lla value.
-type LngLatAlt struct {
-	Point    Vector2
-	Altitude float64
-}
-
 // Spherical is a spatial vocabulary #sph value.
 type Spherical = ronmath.Spherical[float64]
 
@@ -71,7 +65,7 @@ func (opts optionState) isSpatialTag(tag string) bool {
 		return false
 	}
 	switch tag {
-	case "#lla", "#sph", "#cyl", "#bx2", "#bx3", "#spr", "#pln", "#ray", "#ln2", "#ln3", "#tri", "#fru", "#sh3", "#vox":
+	case "#sph", "#cyl", "#bx2", "#bx3", "#spr", "#pln", "#ray", "#ln2", "#ln3", "#tri", "#fru", "#sh3", "#vox":
 		return true
 	default:
 		return false
@@ -80,12 +74,6 @@ func (opts optionState) isSpatialTag(tag string) bool {
 
 func (opts optionState) parseSpatialPayload(tag string, payload any) (any, error) {
 	switch tag {
-	case "#lla":
-		values, err := parseSpatialFloatTuple(payload, 3, "invalid #lla payload")
-		if err != nil {
-			return nil, err
-		}
-		return LngLatAlt{Point: vector2FromSlice(values), Altitude: values[2]}, nil
 	case "#sph":
 		values, err := parseSpatialFloatTuple(payload, 3, "invalid #sph payload")
 		if err != nil {
