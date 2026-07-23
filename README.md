@@ -92,6 +92,14 @@ if err := enc.Encode(map[string]any{"person": Person{ID: 1538289, Name: "Ada"}})
 
 Byte-returning conversion and marshal APIs return exactly one encoded value without a trailing newline. `Marshal` emits pretty RON, `MarshalCompact` emits compact RON, and `NewEncoder` writes one RON value plus a trailing newline per `Encode` call. Reflection supports common JSON-shaped Go values and `json` struct tags including `omitempty`.
 
+### Stream profiles
+
+`NewNdronEncoder` and `NewNdronDecoder` implement `application/x-ndron` (`.ndron`) with one compact RON value per LF-terminated record. Decoders accept LF and CRLF. Empty lines are errors by default; use `IgnoreEmptyNdronLines(true)` to skip them.
+
+`NewRonSequenceEncoder` and `NewRonSequenceDecoder` implement `application/ron-seq` with RS-prefixed, LF-terminated records. Sequence decoders consume malformed elements and recover at the next RS, so callers may continue after non-EOF errors. `Decode` uses `encoding/json` semantics for its destination.
+
+Both profiles default to a 1 MiB record limit and 100 nesting levels. Override these bounded defaults with `MaxRecordSize` and `MaxNestingDepth`.
+
 Pretty JSON-to-RON renders root object members directly and can map JSON values to tagged RON values:
 
 ```go
@@ -152,7 +160,7 @@ nix develop
 go test ./...
 ```
 
-Without Nix, set `RON_TESTDATA_DIR=/path/to/ron/testdata` or provide local `testdata/conformance`, `testdata/rfc8785`, and `testdata/vocabularies` directories. Otherwise testdata-backed tests are skipped.
+Without Nix, set `RON_TESTDATA_DIR=/path/to/ron/testdata` or provide local `testdata/conformance`, `testdata/rfc8785`, `testdata/sequences`, and `testdata/vocabularies` directories. Otherwise testdata-backed tests are skipped.
 
 To update to the latest reference corpus:
 

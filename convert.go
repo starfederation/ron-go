@@ -6,7 +6,7 @@ import (
 	"io"
 )
 
-// Option configures RON and JSON conversion.
+// Option configures RON and JSON conversion or stream processing.
 type Option func(*optionState)
 
 type optionState struct {
@@ -17,6 +17,9 @@ type optionState struct {
 	customVocabularies    map[string]CustomVocabulary
 	customVocabularyOrder []string
 	customTags            map[string]string
+	maxRecordSize         int
+	maxNestingDepth       int
+	ignoreEmptyNdronLines bool
 }
 
 type formatOptions struct {
@@ -67,6 +70,29 @@ func IsCanonical(canonical bool) Option {
 	}
 }
 
+// MaxRecordSize limits the encoded RON bytes in each stream record, excluding framing.
+// Non-positive values use the default limit.
+func MaxRecordSize(size int) Option {
+	return func(opts *optionState) {
+		opts.maxRecordSize = size
+	}
+}
+
+// MaxNestingDepth limits nested RON arrays and objects during decoding and stream validation.
+// Non-positive values use the stream default or remain unlimited for non-stream conversions.
+func MaxNestingDepth(depth int) Option {
+	return func(opts *optionState) {
+		opts.maxNestingDepth = depth
+	}
+}
+
+// IgnoreEmptyNdronLines controls whether NDRON decoders skip empty lines.
+func IgnoreEmptyNdronLines(ignore bool) Option {
+	return func(opts *optionState) {
+		opts.ignoreEmptyNdronLines = ignore
+	}
+}
+
 // MapJSONValues transforms decoded JSON values before JSON-to-RON rendering.
 func MapJSONValues(mapper func(path []JSONPathSegment, value any) (any, bool)) Option {
 	return func(opts *optionState) {
@@ -106,7 +132,7 @@ func ToJSONInto(dst *bytes.Buffer, src []byte, options ...Option) ([]byte, error
 			return nil, err
 		}
 		if containsVocabularyMarker(src) {
-			value, err := parse(src)
+			value, err := parseWithMaxDepth(src, opts.maxNestingDepth)
 			if err != nil {
 				return nil, err
 			}
@@ -119,6 +145,7 @@ func ToJSONInto(dst *bytes.Buffer, src []byte, options ...Option) ([]byte, error
 	scratch := jsonScratchPool.Get().(*jsonScratchState)
 	p := parser{
 		src:               src,
+		maxNestingDepth:   opts.maxNestingDepth,
 		jsonScratch:       scratch.buffers,
 		jsonMemberScratch: scratch.members,
 	}
@@ -143,6 +170,7 @@ func ToJSONInto(dst *bytes.Buffer, src []byte, options ...Option) ([]byte, error
 	}()
 	p.skipSpace()
 	if p.pos < len(p.src) && p.src[p.pos] != '{' && p.src[p.pos] != '[' {
+		p.nestingDepth = 1
 		start := p.pos
 		bufStart := dst.Len()
 		memberScratch, memberValues := p.nextJSONMembers()
@@ -177,12 +205,16 @@ func ToJSONInto(dst *bytes.Buffer, src []byte, options ...Option) ([]byte, error
 			if err := p.writeJSONValue(values, opts.prefix, opts.indent, 1, opts.isCanonical); err != nil {
 				p.releaseJSONScratch()
 				p.releaseJSONMembers(memberScratch, members.Values)
+				if err == ErrNestingTooDeep {
+					return nil, err
+				}
 				break
 			}
 			members.Set(key, valueStart, values.Len())
 		}
 		dst.Truncate(bufStart)
 		p.pos = start
+		p.nestingDepth = 0
 	}
 
 	if err := p.writeJSONValue(dst, opts.prefix, opts.indent, 0, opts.isCanonical); err != nil {
