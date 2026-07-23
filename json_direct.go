@@ -148,6 +148,10 @@ func (p *parser) writeJSONValueCurrent(buf *bytes.Buffer, prefix, indent string,
 	}
 	switch p.src[p.pos] {
 	case '{':
+		if err := p.enterContainer(); err != nil {
+			return err
+		}
+		defer p.leaveContainer()
 		p.pos++
 		memberScratch, memberValues := p.nextJSONMembers()
 		members := jsonMembers{Values: memberValues}
@@ -185,6 +189,10 @@ func (p *parser) writeJSONValueCurrent(buf *bytes.Buffer, prefix, indent string,
 			p.skipSeparators()
 		}
 	case '[':
+		if err := p.enterContainer(); err != nil {
+			return err
+		}
+		defer p.leaveContainer()
 		p.pos++
 		p.skipWhitespace()
 		if p.pos == len(p.src) {

@@ -133,6 +133,11 @@ func writeMarshaledValue(buf *bytes.Buffer, value any, opts optionState) error {
 	if err != nil {
 		return err
 	}
+	if opts.maxNestingDepth > 0 {
+		if err := validateMarshaledDepth(normalized, opts.maxNestingDepth, 0); err != nil {
+			return err
+		}
+	}
 
 	if opts.isPretty {
 		switch object := normalized.(type) {
@@ -152,6 +157,48 @@ func writeMarshaledValue(buf *bytes.Buffer, value any, opts optionState) error {
 	}
 
 	writeCompactValueWithCustom(buf, normalized, true, opts.isCanonical, opts.customRenderersList())
+	return nil
+}
+
+func validateMarshaledDepth(value any, maxDepth, depth int) error {
+	switch value := value.(type) {
+	case []any:
+		if depth >= maxDepth {
+			return ErrNestingTooDeep
+		}
+		for _, child := range value {
+			if err := validateMarshaledDepth(child, maxDepth, depth+1); err != nil {
+				return err
+			}
+		}
+	case multilineArray:
+		if depth >= maxDepth {
+			return ErrNestingTooDeep
+		}
+		for _, child := range value {
+			if err := validateMarshaledDepth(child, maxDepth, depth+1); err != nil {
+				return err
+			}
+		}
+	case map[string]any:
+		if depth >= maxDepth {
+			return ErrNestingTooDeep
+		}
+		for _, child := range value {
+			if err := validateMarshaledDepth(child, maxDepth, depth+1); err != nil {
+				return err
+			}
+		}
+	case orderedObject:
+		if depth >= maxDepth {
+			return ErrNestingTooDeep
+		}
+		for _, member := range value.Members {
+			if err := validateMarshaledDepth(member.Value, maxDepth, depth+1); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 

@@ -27,6 +27,8 @@ func newError(msg string) error {
 type parser struct {
 	src                    []byte
 	pos                    int
+	maxNestingDepth        int
+	nestingDepth           int
 	jsonScratch            []bytes.Buffer
 	jsonScratchDepth       int
 	jsonMemberScratch      [][]jsonMember
@@ -50,15 +52,26 @@ var asciiDelimiter = [utf8.RuneSelf]bool{
 }
 
 func parse(src []byte) (any, error) {
-	p := parser{src: src}
+	return parseWithMaxDepth(src, 0)
+}
+
+func parseWithMaxDepth(src []byte, maxNestingDepth int) (any, error) {
+	p := parser{
+		src:             src,
+		maxNestingDepth: maxNestingDepth,
+	}
 	p.skipSpace()
 	if p.pos < len(p.src) && p.src[p.pos] != '{' && p.src[p.pos] != '[' {
+		p.nestingDepth = 1
 		p.pos = 0
 		p.skipSpace()
 		key, err := p.parseKeyCurrent()
 		if err == nil {
 			p.skipWhitespace()
 			value, err := p.parseValueCurrent()
+			if err == ErrNestingTooDeep {
+				return nil, err
+			}
 			if err == nil {
 				object := map[string]any{
 					key: value,
@@ -74,6 +87,9 @@ func parse(src []byte) (any, error) {
 
 					p.skipWhitespace()
 					value, err := p.parseValueCurrent()
+					if err == ErrNestingTooDeep {
+						return nil, err
+					}
 					if err != nil {
 						ok = false
 						break
@@ -90,6 +106,7 @@ func parse(src []byte) (any, error) {
 	}
 
 	p.pos = 0
+	p.nestingDepth = 0
 	value, err := p.parseValue()
 	if err != nil {
 		return nil, err
@@ -113,6 +130,10 @@ func (p *parser) parseValueCurrent() (any, error) {
 	}
 	switch p.src[p.pos] {
 	case '{':
+		if err := p.enterContainer(); err != nil {
+			return nil, err
+		}
+		defer p.leaveContainer()
 		p.pos++
 		object := make(map[string]any, 4)
 		for {
@@ -140,6 +161,10 @@ func (p *parser) parseValueCurrent() (any, error) {
 			p.skipSeparators()
 		}
 	case '[':
+		if err := p.enterContainer(); err != nil {
+			return nil, err
+		}
+		defer p.leaveContainer()
 		p.pos++
 		array := make([]any, 0, 4)
 		for {
@@ -515,6 +540,18 @@ func (p *parser) skipSeparators() {
 		}
 		p.pos++
 	}
+}
+
+func (p *parser) enterContainer() error {
+	if p.maxNestingDepth > 0 && p.nestingDepth >= p.maxNestingDepth {
+		return ErrNestingTooDeep
+	}
+	p.nestingDepth++
+	return nil
+}
+
+func (p *parser) leaveContainer() {
+	p.nestingDepth--
 }
 
 func (p *parser) errorf(msg string) error {
