@@ -92,13 +92,13 @@ func TestSupportedVocabulariesAreEnabledByDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FromJSON default vocabularies: %v", err)
 	}
-	assertBytesEqual(t, []byte("accent {#clr [oklch 0.7 0.15 230]}\ncreated {#utc 2026-06-13T00:00:00Z}\nid {#uid 00112233-4455-6677-8899-aabbccddeeff}\n"), got)
+	assertBytesEqual(t, []byte("accent {#clr [oklch 0.7 0.15 230]}\ncreated {#utc 2026-06-13T00:00:00Z}\nid {#uid 00112233-4455-6677-8899-aabbccddeeff}"), got)
 
 	escaped, err := FromJSON([]byte(`{"created":{"\u0023utc":"2026-06-13T00:00:00Z"}}`))
 	if err != nil {
 		t.Fatalf("FromJSON escaped vocabulary marker: %v", err)
 	}
-	assertBytesEqual(t, []byte("created {#utc 2026-06-13T00:00:00Z}\n"), escaped)
+	assertBytesEqual(t, []byte("created {#utc 2026-06-13T00:00:00Z}"), escaped)
 
 	if _, err := FromJSON([]byte(`{"bad":{"#dur":"P1M"}}`)); err == nil {
 		t.Fatal("FromJSON accepted invalid default vocabulary payload")

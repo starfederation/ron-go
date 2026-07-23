@@ -14,7 +14,7 @@ func TestNetworkVocabularyFixtures(t *testing.T) {
 
 		t.Run(tc.Name, func(t *testing.T) {
 			input := readConformanceFile(t, root, tc.InputJSON)
-			expected := readConformanceFile(t, root, tc.ExpectedRON)
+			expected := readRONValueFixture(t, root, tc.ExpectedRON)
 
 			got, err := FromJSON(input)
 			if err != nil {

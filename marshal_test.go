@@ -28,7 +28,7 @@ func TestMarshalReflectsStructsWithRONTagsThenJSONTags(t *testing.T) {
 		t.Fatalf("Marshal: %v", err)
 	}
 
-	want := []byte("id 1538289\nlist [alpha beta]\nname Ada\nronAlias 'ron tag wins'\n")
+	want := []byte("id 1538289\nlist [alpha beta]\nname Ada\nronAlias 'ron tag wins'")
 	assertBytesEqual(t, want, got)
 }
 

@@ -13,13 +13,15 @@ import (
 	"strings"
 )
 
-// Marshal returns value encoded as RON. By default it emits pretty RON.
+// Marshal returns value encoded as RON without a trailing newline.
+// By default it emits pretty RON.
 func Marshal(value any, options ...Option) ([]byte, error) {
 	var buf bytes.Buffer
 	return MarshalInto(&buf, value, options...)
 }
 
-// MarshalInto appends value encoded as RON to dst. By default it emits pretty RON.
+// MarshalInto appends value encoded as RON to dst without a trailing newline.
+// By default it emits pretty RON.
 func MarshalInto(dst *bytes.Buffer, value any, options ...Option) ([]byte, error) {
 	if dst == nil {
 		return Marshal(value, options...)
@@ -32,13 +34,13 @@ func MarshalInto(dst *bytes.Buffer, value any, options ...Option) ([]byte, error
 	return dst.Bytes(), nil
 }
 
-// MarshalCompact returns value encoded as compact RON.
+// MarshalCompact returns value encoded as compact RON without a trailing newline.
 func MarshalCompact(value any) ([]byte, error) {
 	var buf bytes.Buffer
 	return MarshalCompactInto(&buf, value)
 }
 
-// MarshalCompactInto appends value encoded as compact RON to dst.
+// MarshalCompactInto appends value encoded as compact RON to dst without a trailing newline.
 func MarshalCompactInto(dst *bytes.Buffer, value any) ([]byte, error) {
 	if dst == nil {
 		return MarshalCompact(value)
@@ -71,9 +73,7 @@ func (e *Encoder) Encode(value any) error {
 	if err := writeMarshaledValue(&buf, value, e.opts); err != nil {
 		return err
 	}
-	if !e.opts.isPretty {
-		buf.WriteByte('\n')
-	}
+	buf.WriteByte('\n')
 
 	written, err := e.w.Write(buf.Bytes())
 	if err != nil {
@@ -139,18 +139,15 @@ func writeMarshaledValue(buf *bytes.Buffer, value any, opts optionState) error {
 		case orderedObject:
 			if len(object.Members) > 0 {
 				writeObjectMembersWithCustom(buf, objectMembers(object, opts.isCanonical), opts.indent, -1, opts.isCanonical, opts.customRenderersList())
-				buf.WriteByte('\n')
 				return nil
 			}
 		case map[string]any:
 			if len(object) > 0 {
 				writeObjectMembersWithCustom(buf, objectMembers(object, opts.isCanonical), opts.indent, -1, opts.isCanonical, opts.customRenderersList())
-				buf.WriteByte('\n')
 				return nil
 			}
 		}
 		writeValueWithCustom(buf, normalized, opts.indent, 0, opts.isCanonical, opts.customRenderersList())
-		buf.WriteByte('\n')
 		return nil
 	}
 

@@ -42,10 +42,10 @@ func main() {
         panic(err)
     }
 
-    fmt.Print(string(compactJSON))
-    fmt.Print(string(prettyJSON))
-    fmt.Print(string(prettyRON))
-    fmt.Print(string(compactRON))
+    fmt.Println(string(compactJSON))
+    fmt.Println(string(prettyJSON))
+    fmt.Println(string(prettyRON))
+    fmt.Println(string(compactRON))
 }
 ```
 
@@ -88,7 +88,7 @@ if err := enc.Encode(map[string]any{"person": Person{ID: 1538289, Name: "Ada"}})
 }
 ```
 
-`Marshal` emits pretty RON, `MarshalCompact` emits compact RON, and `NewEncoder` writes one RON value plus a trailing newline per `Encode` call. Reflection supports common JSON-shaped Go values and `json` struct tags including `omitempty`.
+Byte-returning conversion and marshal APIs return exactly one encoded value without a trailing newline. `Marshal` emits pretty RON, `MarshalCompact` emits compact RON, and `NewEncoder` writes one RON value plus a trailing newline per `Encode` call. Reflection supports common JSON-shaped Go values and `json` struct tags including `omitempty`.
 
 Pretty JSON-to-RON renders root object members directly and can map JSON values to tagged RON values:
 
