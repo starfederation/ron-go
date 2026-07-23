@@ -12,6 +12,7 @@ import (
 type NdronEncoder struct {
 	writer   io.Writer
 	settings streamSettings
+	opts     optionState
 }
 
 // NewNdronEncoder returns an encoder for application/x-ndron streams.
@@ -21,29 +22,32 @@ func NewNdronEncoder(writer io.Writer, options ...Option) *NdronEncoder {
 	return &NdronEncoder{
 		writer:   writer,
 		settings: settings,
+		opts:     marshalOptions(settings.options...),
 	}
 }
 
 // Encode writes one compact RON record followed by LF.
 func (e *NdronEncoder) Encode(value any) error {
-	record, err := Marshal(value, e.settings.options...)
-	if err != nil {
+	var buf bytes.Buffer
+	if err := writeMarshaledValue(&buf, value, e.opts); err != nil {
 		return err
 	}
-	if err := validateRonStreamRecord(record, e.settings); err != nil {
+	if err := validateStreamRecordSize(buf.Bytes(), e.settings); err != nil {
 		return err
 	}
-	if bytes.ContainsAny(record, "\r\n") {
+	if bytes.ContainsAny(buf.Bytes(), "\r\n") {
 		return fmt.Errorf("ron: NDRON record contains a raw line ending")
 	}
-	return writeStreamBytes(e.writer, append(record, '\n'))
+	buf.WriteByte('\n')
+	return writeStreamBytes(e.writer, buf.Bytes())
 }
 
 // NdronDecoder reads one LF- or CRLF-terminated RON value per Decode call.
 // Invalid records are consumed, so callers may continue after non-EOF errors.
 type NdronDecoder struct {
-	reader   *bufio.Reader
-	settings streamSettings
+	reader     *bufio.Reader
+	settings   streamSettings
+	jsonBuffer bytes.Buffer
 }
 
 // NewNdronDecoder returns a decoder for application/x-ndron streams.
@@ -87,6 +91,6 @@ func (d *NdronDecoder) Decode(value any) error {
 			}
 			return ErrEmptyNdronRecord
 		}
-		return decodeRonStreamValue(record, value, d.settings)
+		return decodeRonStreamValue(record, value, d.settings, &d.jsonBuffer)
 	}
 }

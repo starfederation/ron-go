@@ -2,6 +2,7 @@ package ron
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"io"
 )
@@ -11,40 +12,41 @@ import (
 type RonSequenceEncoder struct {
 	writer   io.Writer
 	settings streamSettings
+	opts     optionState
 }
 
 // NewRonSequenceEncoder returns an encoder for application/ron-seq streams.
 func NewRonSequenceEncoder(writer io.Writer, options ...Option) *RonSequenceEncoder {
+	settings := newStreamSettings(options)
 	return &RonSequenceEncoder{
 		writer:   writer,
-		settings: newStreamSettings(options),
+		settings: settings,
+		opts:     marshalOptions(settings.options...),
 	}
 }
 
 // Encode writes one RS-prefixed RON value followed by LF.
 func (e *RonSequenceEncoder) Encode(value any) error {
-	record, err := Marshal(value, e.settings.options...)
-	if err != nil {
+	var buf bytes.Buffer
+	buf.WriteByte(0x1e)
+	if err := writeMarshaledValue(&buf, value, e.opts); err != nil {
 		return err
 	}
-	if err := validateRonStreamRecord(record, e.settings); err != nil {
+	if err := validateStreamRecordSize(buf.Bytes()[1:], e.settings); err != nil {
 		return err
 	}
-
-	framed := make([]byte, len(record)+2)
-	framed[0] = 0x1e
-	copy(framed[1:], record)
-	framed[len(framed)-1] = '\n'
-	return writeStreamBytes(e.writer, framed)
+	buf.WriteByte('\n')
+	return writeStreamBytes(e.writer, buf.Bytes())
 }
 
 // RonSequenceDecoder reads RS-prefixed RON values and recovers at each RS.
 // Invalid elements are consumed, so callers should continue after non-EOF errors.
 type RonSequenceDecoder struct {
-	reader   *bufio.Reader
-	settings streamSettings
-	started  bool
-	eof      bool
+	reader     *bufio.Reader
+	settings   streamSettings
+	jsonBuffer bytes.Buffer
+	started    bool
+	eof        bool
 }
 
 // NewRonSequenceDecoder returns a decoder for application/ron-seq streams.
@@ -116,6 +118,6 @@ func (d *RonSequenceDecoder) Decode(value any) error {
 		if len(record) > d.settings.maxRecordSize {
 			return fmt.Errorf("%w: limit %d bytes", ErrRecordTooLarge, d.settings.maxRecordSize)
 		}
-		return decodeRonStreamValue(record, value, d.settings)
+		return decodeRonStreamValue(record, value, d.settings, &d.jsonBuffer)
 	}
 }

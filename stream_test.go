@@ -125,6 +125,25 @@ func TestNdronEmptyLinePolicyIsConfigurable(t *testing.T) {
 	}
 }
 
+func TestStreamDecoderDecodesConsecutiveGoValues(t *testing.T) {
+	decoder := NewNdronDecoder(bytes.NewReader([]byte("id 1\nid 2\n")))
+	var value struct {
+		ID int `json:"id"`
+	}
+	if err := decoder.Decode(&value); err != nil {
+		t.Fatalf("Decode first value: %v", err)
+	}
+	if value.ID != 1 {
+		t.Fatalf("first ID = %d, want 1", value.ID)
+	}
+	if err := decoder.Decode(&value); err != nil {
+		t.Fatalf("Decode second value: %v", err)
+	}
+	if value.ID != 2 {
+		t.Fatalf("second ID = %d, want 2", value.ID)
+	}
+}
+
 func TestStreamFramingErrors(t *testing.T) {
 	ndron := NewNdronDecoder(bytes.NewReader([]byte("true")))
 	var value any

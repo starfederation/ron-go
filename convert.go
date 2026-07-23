@@ -113,6 +113,10 @@ func ToJSONInto(dst *bytes.Buffer, src []byte, options ...Option) ([]byte, error
 		return ToJSON(src, options...)
 	}
 
+	return toJSONIntoState(dst, src, toJSONOptionState(options))
+}
+
+func toJSONOptionState(options []Option) optionState {
 	opts := optionState{
 		formatOptions:  formatOptions{isCanonical: true},
 		vocabularyMask: defaultVocabularySet,
@@ -127,6 +131,10 @@ func ToJSONInto(dst *bytes.Buffer, src []byte, options ...Option) ([]byte, error
 		opts.prefix = ""
 		opts.indent = ""
 	}
+	return opts
+}
+
+func toJSONIntoState(dst *bytes.Buffer, src []byte, opts optionState) ([]byte, error) {
 	if opts.hasVocabularies() {
 		if err := opts.validateVocabularies(); err != nil {
 			return nil, err

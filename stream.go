@@ -2,6 +2,7 @@ package ron
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,6 +26,7 @@ var (
 
 type streamSettings struct {
 	options          []Option
+	jsonOptions      optionState
 	maxRecordSize    int
 	ignoreEmptyLines bool
 }
@@ -36,20 +38,18 @@ func newStreamSettings(options []Option) streamSettings {
 	)
 
 	copiedOptions := append([]Option(nil), options...)
-	state := optionState{}
-	for _, option := range copiedOptions {
-		option(&state)
-	}
-
+	state := toJSONOptionState(copiedOptions)
 	maxRecordSize := state.maxRecordSize
 	if maxRecordSize <= 0 {
 		maxRecordSize = defaultMaxRecordSize
 	}
 	if state.maxNestingDepth <= 0 {
 		copiedOptions = append(copiedOptions, MaxNestingDepth(defaultMaxNestingDepth))
+		state.maxNestingDepth = defaultMaxNestingDepth
 	}
 	return streamSettings{
 		options:          copiedOptions,
+		jsonOptions:      state,
 		maxRecordSize:    maxRecordSize,
 		ignoreEmptyLines: state.ignoreEmptyNdronLines,
 	}
@@ -63,6 +63,12 @@ func readBoundedUntil(reader *bufio.Reader, delimiter byte, maxSize int) ([]byte
 		found := err == nil
 		if found {
 			chunk = chunk[:len(chunk)-1]
+		}
+		if len(data) == 0 && !tooLarge && (err == nil || err == io.EOF) {
+			if len(chunk) > maxSize {
+				return nil, found, ErrRecordTooLarge
+			}
+			return chunk, found, nil
 		}
 		if !tooLarge {
 			if len(chunk) > maxSize-len(data) {
@@ -92,20 +98,24 @@ func readBoundedUntil(reader *bufio.Reader, delimiter byte, maxSize int) ([]byte
 	}
 }
 
-func decodeRonStreamValue(record []byte, value any, settings streamSettings) error {
-	jsonBody, err := ToJSON(record, settings.options...)
+func decodeRonStreamValue(record []byte, value any, settings streamSettings, buf *bytes.Buffer) error {
+	buf.Reset()
+	jsonBody, err := toJSONIntoState(buf, record, settings.jsonOptions)
 	if err != nil {
 		return err
+	}
+	if raw, ok := value.(*json.RawMessage); ok && raw != nil {
+		*raw = append((*raw)[:0], jsonBody...)
+		return nil
 	}
 	return json.Unmarshal(jsonBody, value)
 }
 
-func validateRonStreamRecord(record []byte, settings streamSettings) error {
+func validateStreamRecordSize(record []byte, settings streamSettings) error {
 	if len(record) > settings.maxRecordSize {
 		return fmt.Errorf("%w: limit %d bytes", ErrRecordTooLarge, settings.maxRecordSize)
 	}
-	_, err := ToJSON(record, settings.options...)
-	return err
+	return nil
 }
 
 func writeStreamBytes(writer io.Writer, body []byte) error {
