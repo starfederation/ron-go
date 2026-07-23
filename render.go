@@ -327,11 +327,11 @@ func renderString(value string, key bool) string {
 	for i := 0; i < len(value); {
 		b := value[i]
 		if b < utf8.RuneSelf {
-			if b == '"' || b == '\\' || b < 0x20 {
+			if b == '\\' || b < 0x20 {
 				needsEscaping = true
 			}
 			switch b {
-			case '{', '}', '[', ']', '\'', ',', ' ':
+			case '{', '}', '[', ']', '"', '\'', ',', ' ':
 				structural = true
 			}
 			i++
@@ -353,8 +353,6 @@ func renderString(value string, key bool) string {
 		escaped.Grow(len(value))
 		for i := 0; i < len(value); i++ {
 			switch b := value[i]; b {
-			case '"':
-				escaped.WriteString(`\"`)
 			case '\\':
 				escaped.WriteString(`\\`)
 			case '\b':

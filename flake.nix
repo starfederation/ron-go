@@ -4,7 +4,7 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     ron = {
-      url = "github:starfederation/ron/v0.2.0";
+      url = "github:starfederation/ron/v0.2.2";
       flake = false;
     };
   };
