@@ -121,7 +121,7 @@ func TestCoreVocabularyRendersAPDDecimal(t *testing.T) {
 }
 
 func TestCoreVocabularyParsesNativeValuesFromRON(t *testing.T) {
-	value, err := parse([]byte(`id {#uid 00112233-4455-6677-8899-aabbccddeeff} regex {#rx [(?<word>\w+) m]}`))
+	value, err := parse([]byte(`id {#uid 00112233-4455-6677-8899-aabbccddeeff} regex {#rx [(?<word>\\w+) m]}`))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}

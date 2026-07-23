@@ -1,10 +1,12 @@
 # ron-go
 
-Go reference implementation for RON, Readable Object Notation.
+Go reference implementation for RON v1, Readable Object Notation.
 
 RON is documented in the language-neutral reference repo:
 
 - https://github.com/starfederation/ron
+
+RON v1 strings use JSON escapes in every bare, quoted, comma-prefixed, key, and value form. Literal backslashes require `\\`; malformed escapes, unpaired surrogates, and raw C0 string content are rejected.
 
 ## Install
 

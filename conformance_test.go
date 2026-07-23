@@ -19,6 +19,7 @@ type conformanceManifest struct {
 		JSONPrefix                string                   `json:"jsonPrefix"`
 		JSONIndent                string                   `json:"jsonIndent"`
 		RONIndent                 string                   `json:"ronIndent"`
+		StringEscapes             string                   `json:"stringEscapes"`
 		PrettyRONTrailingNewline  bool                     `json:"prettyRONTrailingNewline"`
 		ObjectKeyOrder            string                   `json:"objectKeyOrder"`
 		CanonicalRON              string                   `json:"canonicalRON"`
@@ -77,8 +78,12 @@ type rfc8785NumberCase struct {
 
 func TestConformanceValid(t *testing.T) {
 	root, manifest := loadConformanceManifest(t)
-	if manifest.Formatting.JSONPrefix != "" || manifest.Formatting.JSONIndent == "" || manifest.Formatting.RONIndent == "" {
-		t.Fatalf("unsupported conformance formatting: %+v", manifest.Formatting)
+	if manifest.Version != 1 ||
+		manifest.Formatting.JSONPrefix != "" ||
+		manifest.Formatting.JSONIndent == "" ||
+		manifest.Formatting.RONIndent == "" ||
+		manifest.Formatting.StringEscapes == "" {
+		t.Fatalf("unsupported conformance manifest: version %d, formatting %+v", manifest.Version, manifest.Formatting)
 	}
 
 	for _, tc := range manifest.Valid {

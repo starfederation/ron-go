@@ -33,7 +33,7 @@ Vocabulary-aware parsing validates matching core tags and maps them to native Go
 
 ### `ron.RegExp`
 
-`#rx` preserves JavaScript `source` and canonical flags. Parsed values compile to a fast pure-Go matcher through `github.com/coregx/coregex`. Case-insensitive `MatchString` uses Go stdlib regexp for correct anchored `i` semantics. `i`, `m`, and `s` flags are mapped to Go inline flags; `d`, `g`, `u`, `v`, and `y` are preserved in `Flags` and do not change Go matching behavior. JavaScript escapes such as `\u0000`, `\u{0}`, `\cA`, and `[\b]` are converted to Go regex escapes. JavaScript features that coregex cannot express, such as lookaround and backreferences, are rejected.
+`#rx` preserves JavaScript `source` and canonical flags. Because every RON v1 string uses JSON escapes, regex backslashes are doubled in RON source: JavaScript `\d` is written as RON `\\d`. Parsed values compile to a fast pure-Go matcher through `github.com/coregx/coregex`. Case-insensitive `MatchString` uses Go stdlib regexp for correct anchored `i` semantics. `i`, `m`, and `s` flags are mapped to Go inline flags; `d`, `g`, `u`, `v`, and `y` are preserved in `Flags` and do not change Go matching behavior. JavaScript escapes such as `\u0000`, `\u{0}`, `\cA`, and `[\b]` are converted to Go regex escapes. JavaScript features that coregex cannot express, such as lookaround and backreferences, are rejected.
 
 ### `*ron.Decimal`
 
