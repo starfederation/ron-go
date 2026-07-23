@@ -311,14 +311,8 @@ func (p *parser) parseQuotedString() (string, error) {
 				p.pos += count
 				return p.decodeStringSpan(start, end)
 			}
-			if quote == '"' {
-				return "", p.errorf("unescaped double quote in string")
-			}
 			p.pos += run
 			continue
-		}
-		if b == '"' {
-			return "", p.errorf("unescaped double quote in string")
 		}
 		if b < utf8.RuneSelf {
 			p.pos++
