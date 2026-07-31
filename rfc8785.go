@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"io"
 	"math"
-	"math/big"
 	"sort"
 	"strconv"
 	"unicode/utf16"
@@ -82,7 +81,12 @@ func decodeRFC8785Value(dec *json.Decoder) (any, error) {
 	}
 
 	switch token := token.(type) {
-	case nil, bool, string:
+	case nil, bool:
+		return token, nil
+	case string:
+		if err := validateCanonicalString(token); err != nil {
+			return nil, err
+		}
 		return token, nil
 	case json.Number:
 		text := token.String()
@@ -91,25 +95,6 @@ func decodeRFC8785Value(dec *json.Decoder) (any, error) {
 			return nil, newError("invalid JSON number")
 		}
 
-		isInteger := true
-		for i := 0; i < len(text); i++ {
-			switch text[i] {
-			case '.', 'e', 'E':
-				isInteger = false
-			}
-		}
-		if isInteger {
-			integer := new(big.Int)
-			if _, ok := integer.SetString(text, 10); !ok {
-				return nil, newError("JSON integer is not exactly representable as float64")
-			}
-
-			rational := new(big.Rat)
-			rational.SetFloat64(float)
-			if !rational.IsInt() || rational.Num().Cmp(integer) != 0 {
-				return nil, newError("JSON integer is not exactly representable as float64")
-			}
-		}
 		return float, nil
 	case json.Delim:
 		switch token {
@@ -124,6 +109,9 @@ func decodeRFC8785Value(dec *json.Decoder) (any, error) {
 				key, ok := keyToken.(string)
 				if !ok {
 					return nil, newError("expected JSON object key")
+				}
+				if err := validateCanonicalString(key); err != nil {
+					return nil, err
 				}
 				if _, ok := seen[key]; ok {
 					return nil, newError("duplicate JSON object key")

@@ -17,6 +17,14 @@ func TestSetVocabularyFixtures(t *testing.T) {
 			if err != nil {
 				t.Fatalf("FromJSON set vocabulary: %v", err)
 			}
+			canonicalJSON, err := ToJSON(got, Mode(Canonical))
+			if err != nil {
+				t.Fatalf("ToJSON canonical vocabulary: %v", err)
+			}
+			got, err = FromJSON(canonicalJSON, Mode(Pretty))
+			if err != nil {
+				t.Fatalf("FromJSON sorted vocabulary: %v", err)
+			}
 			assertBytesEqual(t, expected, got)
 
 			jsonBody, err := ToJSON(got)
@@ -46,6 +54,26 @@ func TestSetVocabularyInvalidFixtures(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCanonicalSetVocabularyNormalizesPayloads(t *testing.T) {
+	root, _ := loadVocabularyManifest(t)
+	input := readConformanceFile(t, root, "set/input.json")
+	expectedRON := readRONValueFixture(t, root, "set/expected.ron")
+
+	got, err := FromJSON(input, Mode(Canonical))
+	if err != nil {
+		t.Fatalf("FromJSON canonical set vocabulary: %v", err)
+	}
+	gotJSON, err := ToJSON(got, Mode(Canonical))
+	if err != nil {
+		t.Fatalf("ToJSON canonical set vocabulary: %v", err)
+	}
+	expectedJSON, err := ToJSON(expectedRON, Mode(Canonical))
+	if err != nil {
+		t.Fatalf("ToJSON expected set vocabulary: %v", err)
+	}
+	assertBytesEqual(t, expectedJSON, gotJSON)
 }
 
 func TestSetVocabularyParsesNativeValues(t *testing.T) {

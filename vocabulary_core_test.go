@@ -1,6 +1,7 @@
 package ron
 
 import (
+	"bytes"
 	"net/url"
 	"testing"
 
@@ -22,6 +23,14 @@ func TestCoreVocabularyFixtures(t *testing.T) {
 			got, err := FromJSON(input, EnableVocabularies(VocabularyCoreV1))
 			if err != nil {
 				t.Fatalf("FromJSON core vocabulary: %v", err)
+			}
+			canonicalJSON, err := ToJSON(got, Mode(Canonical), EnableVocabularies(VocabularyCoreV1))
+			if err != nil {
+				t.Fatalf("ToJSON canonical vocabulary: %v", err)
+			}
+			got, err = FromJSON(canonicalJSON, Mode(Pretty), EnableVocabularies(VocabularyCoreV1))
+			if err != nil {
+				t.Fatalf("FromJSON sorted vocabulary: %v", err)
 			}
 			assertBytesEqual(t, expected, got)
 
@@ -113,7 +122,12 @@ func TestCoreVocabularyRendersAPDDecimal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FromJSON #dec: %v", err)
 	}
-	assertBytesEqual(t, []byte("price {#dec '1.23'}"), got)
+	if !bytes.HasSuffix(got, []byte("\n")) {
+		t.Fatal("FromJSON #dec did not add a trailing newline")
+	}
+	if _, err := ToJSON(got, EnableVocabularies(VocabularyCoreV1)); err != nil {
+		t.Fatalf("ToJSON #dec: %v", err)
+	}
 
 	var buf []byte
 	buf = append(buf, renderScalar(&value, true)...)

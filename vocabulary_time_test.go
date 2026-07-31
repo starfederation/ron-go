@@ -20,6 +20,14 @@ func TestTimeVocabularyFixtures(t *testing.T) {
 			if err != nil {
 				t.Fatalf("FromJSON time vocabulary: %v", err)
 			}
+			canonicalJSON, err := ToJSON(got, Mode(Canonical), EnableVocabularies(VocabularyTimeV1))
+			if err != nil {
+				t.Fatalf("ToJSON canonical vocabulary: %v", err)
+			}
+			got, err = FromJSON(canonicalJSON, Mode(Pretty), EnableVocabularies(VocabularyTimeV1))
+			if err != nil {
+				t.Fatalf("FromJSON sorted vocabulary: %v", err)
+			}
 			assertBytesEqual(t, expected, got)
 
 			jsonBody, err := ToJSON(got, EnableVocabularies(VocabularyTimeV1))

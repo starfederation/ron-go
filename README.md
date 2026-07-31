@@ -24,22 +24,22 @@ import ron "github.com/starfederation/ron-go"
 func main() {
     ronBody := []byte("find [?id ?name]")
 
-    compactJSON, err := ron.ToJSON(ronBody)
+    compactJSON, err := ron.ToJSON(ronBody, ron.Mode(ron.Compact))
     if err != nil {
         panic(err)
     }
 
-    prettyJSON, err := ron.ToJSON(ronBody, ron.PrettyJSON("", "  "))
+    prettyJSON, err := ron.ToJSON(ronBody, ron.Mode(ron.Pretty))
     if err != nil {
         panic(err)
     }
 
-    prettyRON, err := ron.FromJSON([]byte(`{"find":["?id","?name"]}`), ron.Indent("  "))
+    prettyRON, err := ron.FromJSON([]byte(`{"find":["?id","?name"]}`), ron.Mode(ron.Pretty), ron.Indent("  "))
     if err != nil {
         panic(err)
     }
 
-    compactRON, err := ron.FromJSONCompact([]byte(`{"find":["?id","?name"]}`))
+    compactRON, err := ron.FromJSON([]byte(`{"find":["?id","?name"]}`), ron.Mode(ron.Compact))
     if err != nil {
         panic(err)
     }
@@ -55,14 +55,14 @@ For repeated conversions, reuse a `bytes.Buffer`:
 
 ```go
 var buf bytes.Buffer
-jsonBody, err := ron.ToJSONInto(&buf, ronBody)
+jsonBody, err := ron.ToJSONInto(&buf, ronBody, ron.Mode(ron.Compact))
 if err != nil {
     panic(err)
 }
 println(string(jsonBody))
 buf.Reset()
 
-ronBody, err = ron.FromJSONCompactInto(&buf, jsonBody)
+ronBody, err = ron.FromJSONInto(&buf, jsonBody, ron.Mode(ron.Compact))
 if err != nil {
     panic(err)
 }
@@ -84,20 +84,20 @@ if err != nil {
 }
 
 var out bytes.Buffer
-enc := ron.NewEncoder(&out, ron.IsPretty(false))
+enc := ron.NewEncoder(&out, ron.Mode(ron.Compact))
 if err := enc.Encode(map[string]any{"person": Person{ID: 1538289, Name: "Ada"}}); err != nil {
     panic(err)
 }
 ```
 
-Byte-returning conversion and marshal APIs return exactly one encoded value without a trailing newline. `Marshal` emits pretty RON, `MarshalCompact` emits compact RON, and `NewEncoder` writes one RON value plus a trailing newline per `Encode` call. Reflection supports common JSON-shaped Go values and `json` struct tags including `omitempty`.
+Use `Mode(Pretty)`, `Mode(Compact)`, or `Mode(Canonical)` with conversion and encoder APIs. Pretty RON has a trailing newline. Compact RON preserves member order. Canonical RON and JSON validate I-JSON values, canonicalize numbers, and sort keys by RFC 8785 UTF-16 order. `Marshal` emits compact RON. `MarshalPretty` and `MarshalCanonical` emit the other modes. `NewEncoder` writes one RON value per `Encode` call. Reflection supports common JSON-shaped Go values and `json` struct tags including `omitempty`.
 
 Pretty JSON-to-RON renders root object members directly and can map JSON values to tagged RON values:
 
 ```go
 ronBody, err := ron.FromJSON(
     []byte(`{"tx":"tx-48830","committed":"2026-06-13T00:00:00Z"}`),
-    ron.IsCanonical(false),
+    ron.Mode(ron.Pretty),
     ron.MapJSONValues(func(path []ron.JSONPathSegment, value any) (any, bool) {
         if len(path) != 1 || path[0].IsIndex {
             return nil, false
@@ -145,14 +145,14 @@ Run with Nix:
 nix flake check
 ```
 
-`nix develop` creates a local `testdata` symlink to the pinned flake input, so plain Go tests work inside the shell:
+Plain Go tests use the sibling reference repository at `../ron/testdata`:
 
 ```sh
 nix develop
 go test ./...
 ```
 
-Without Nix, set `RON_TESTDATA_DIR=/path/to/ron/testdata` or provide local `testdata/conformance`, `testdata/rfc8785`, and `testdata/vocabularies` directories. Otherwise testdata-backed tests are skipped.
+Set `RON_TESTDATA_DIR` only when the reference repository is at a different path. Missing or stale fixtures fail the tests.
 
 To update to the latest reference corpus:
 

@@ -4,7 +4,7 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     ron = {
-      url = "github:starfederation/ron/v0.2.2";
+      url = "github:starfederation/ron/47c128ee658a0f49cd8e2d8b5bb571958a498f26";
       flake = false;
     };
   };
@@ -30,7 +30,7 @@
           proxyVendor = true;
 
           preCheck = ''
-            ln -s ${ron}/testdata testdata
+            export RON_TESTDATA_DIR=${ron}/testdata
           '';
         };
       });
@@ -42,15 +42,6 @@
             pkgs.gopls
           ];
 
-          shellHook = ''
-            if [ ! -e testdata ]; then
-              ln -s ${ron}/testdata testdata
-            elif [ -L testdata ]; then
-              ln -sfn ${ron}/testdata testdata
-            else
-              echo "testdata exists and is not a symlink; leaving it alone" >&2
-            fi
-          '';
         };
       });
     };
