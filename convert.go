@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"reflect"
 )
 
 // Option configures RON and JSON conversion.
@@ -21,11 +22,22 @@ type optionState struct {
 	maxNestingDepth       int
 }
 
+// OutputMode selects the output format.
+type OutputMode string
+
+const (
+	// Pretty emits multiline output. It is the default.
+	Pretty OutputMode = "pretty"
+	// Compact emits single-line output that preserves member order.
+	Compact OutputMode = "compact"
+	// Canonical emits RFC 8785 JSON or canonical RON.
+	Canonical OutputMode = "canonical"
+)
+
 type formatOptions struct {
-	prefix      string
-	indent      string
-	isPretty    bool
-	isCanonical bool
+	prefix string
+	indent string
+	mode   OutputMode
 }
 
 // JSONPathSegment identifies one object key or array index in a decoded JSON value.
@@ -45,27 +57,22 @@ func Tagged(tag string, value any) map[string]any {
 	}
 }
 
-// PrettyJSON enables indented JSON output.
-func PrettyJSON(prefix, indent string) Option {
+// Mode selects pretty, compact, or canonical output.
+func Mode(mode OutputMode) Option {
 	return func(opts *optionState) {
-		opts.isPretty = true
+		switch mode {
+		case Pretty, Compact, Canonical:
+			opts.mode = mode
+		}
+	}
+}
+
+// JSONIndent sets the prefix and indentation for pretty JSON output.
+// It has effect only with Mode(Pretty).
+func JSONIndent(prefix, indent string) Option {
+	return func(opts *optionState) {
 		opts.prefix = prefix
 		opts.indent = indent
-	}
-}
-
-// IsPretty selects multiline pretty output when true or compact output when false.
-func IsPretty(pretty bool) Option {
-	return func(opts *optionState) {
-		opts.isPretty = pretty
-	}
-}
-
-// IsCanonical selects RFC 8785 UTF-16 object key ordering when true.
-// When false, source object order is preserved when available; unordered Go maps use canonical order.
-func IsCanonical(canonical bool) Option {
-	return func(opts *optionState) {
-		opts.isCanonical = canonical
 	}
 }
 
@@ -88,7 +95,7 @@ func MapJSONValues(mapper func(path []JSONPathSegment, value any) (any, bool)) O
 }
 
 // ToJSON converts RON to one JSON value without a trailing newline.
-// Output is compact unless pretty output is requested.
+// Output is pretty by default.
 func ToJSON(src []byte, options ...Option) ([]byte, error) {
 	var buf bytes.Buffer
 	return ToJSONInto(&buf, src, options...)
@@ -100,21 +107,59 @@ func ToJSONInto(dst *bytes.Buffer, src []byte, options ...Option) ([]byte, error
 		return ToJSON(src, options...)
 	}
 
-	return toJSONIntoState(dst, src, toJSONOptionState(options))
+	opts := toJSONOptionState(options)
+	if opts.mode == Canonical {
+		body, err := canonicalRONToJSON(src, opts.maxNestingDepth)
+		if err != nil {
+			return nil, err
+		}
+		if opts.hasVocabularies() {
+			if err := opts.validateVocabularies(); err != nil {
+				return nil, err
+			}
+			if containsVocabularyMarker(src) {
+				value, err := decodeJSON(body, nil)
+				if err != nil {
+					return nil, err
+				}
+				value, err = opts.parseVocabularyValue(value)
+				if err != nil {
+					return nil, err
+				}
+				normalized, err := marshalRONValue(reflect.ValueOf(value), opts.customRenderersList(), true)
+				if err != nil {
+					return nil, err
+				}
+				normalized, err = canonicalizeMarshaledValue(normalized)
+				if err != nil {
+					return nil, err
+				}
+				var ron bytes.Buffer
+				writeCompactValueWithCustom(&ron, normalized, true, true, opts.customRenderersList())
+				body, err = canonicalRONToJSON(ron.Bytes(), opts.maxNestingDepth)
+				if err != nil {
+					return nil, err
+				}
+			}
+		}
+		dst.Write(body)
+		return dst.Bytes(), nil
+	}
+	return toJSONIntoState(dst, src, opts)
 }
 
 func toJSONOptionState(options []Option) optionState {
 	opts := optionState{
-		formatOptions:  formatOptions{isCanonical: true},
+		formatOptions:  formatOptions{indent: "  ", mode: Pretty},
 		vocabularyMask: defaultVocabularySet,
 	}
 	for _, option := range options {
 		option(&opts)
 	}
-	if opts.isPretty && opts.indent == "" {
+	if opts.mode == Pretty && opts.indent == "" {
 		opts.indent = "  "
 	}
-	if !opts.isPretty {
+	if opts.mode != Pretty {
 		opts.prefix = ""
 		opts.indent = ""
 	}
@@ -174,7 +219,7 @@ func toJSONIntoState(dst *bytes.Buffer, src []byte, opts optionState) ([]byte, e
 		for {
 			p.skipSpace()
 			if p.pos == len(p.src) {
-				if err := p.writeJSONObjectMembers(dst, members.Values, values.Bytes(), opts.prefix, opts.indent, 0, opts.isCanonical && members.NeedsSort); err != nil {
+				if err := p.writeJSONObjectMembers(dst, members.Values, values.Bytes(), opts.prefix, opts.indent, 0, opts.mode == Canonical && members.NeedsSort); err != nil {
 					p.releaseJSONScratch()
 					p.releaseJSONMembers(memberScratch, members.Values)
 					return nil, err
@@ -197,7 +242,7 @@ func toJSONIntoState(dst *bytes.Buffer, src []byte, opts optionState) ([]byte, e
 			}
 
 			valueStart := values.Len()
-			if err := p.writeJSONValue(values, opts.prefix, opts.indent, 1, opts.isCanonical); err != nil {
+			if err := p.writeJSONValue(values, opts.prefix, opts.indent, 1, opts.mode == Canonical); err != nil {
 				p.releaseJSONScratch()
 				p.releaseJSONMembers(memberScratch, members.Values)
 				if err == ErrNestingTooDeep {
@@ -212,7 +257,7 @@ func toJSONIntoState(dst *bytes.Buffer, src []byte, opts optionState) ([]byte, e
 		p.nestingDepth = 0
 	}
 
-	if err := p.writeJSONValue(dst, opts.prefix, opts.indent, 0, opts.isCanonical); err != nil {
+	if err := p.writeJSONValue(dst, opts.prefix, opts.indent, 0, opts.mode == Canonical); err != nil {
 		return nil, err
 	}
 	p.skipSpace()
@@ -237,82 +282,96 @@ func Indent(indent string) Option {
 	}
 }
 
-// FromJSON converts JSON to one RON value without a trailing newline.
-// Output is pretty unless compact output is requested.
+// FromJSON converts JSON to one RON value.
+// Pretty output is the default and ends with a trailing newline.
 func FromJSON(src []byte, options ...Option) ([]byte, error) {
 	var buf bytes.Buffer
 	return FromJSONInto(&buf, src, options...)
 }
 
-// FromJSONInto appends one JSON value converted to RON to dst without a trailing newline.
+// FromJSONInto appends one JSON value converted to RON to dst.
+// Pretty output ends with a trailing newline.
 func FromJSONInto(dst *bytes.Buffer, src []byte, options ...Option) ([]byte, error) {
 	if dst == nil {
 		return FromJSON(src, options...)
 	}
 
 	opts := optionState{
-		formatOptions: formatOptions{
-			indent:      "  ",
-			isPretty:    true,
-			isCanonical: true,
-		},
+		formatOptions:  formatOptions{indent: "  ", mode: Pretty},
 		vocabularyMask: defaultVocabularySet,
 	}
 	for _, option := range options {
 		option(&opts)
 	}
-	if opts.isPretty && opts.indent == "" {
+	if opts.mode == Pretty && opts.indent == "" {
 		opts.indent = "  "
 	}
 	var value any
 	var err error
-	if opts.isCanonical && !opts.isPretty && opts.jsonValueMapper == nil {
-		dec := json.NewDecoder(bytes.NewReader(src))
-		dec.UseNumber()
-		err = dec.Decode(&value)
-		if err == nil {
-			var trailing any
-			if trailingErr := dec.Decode(&trailing); trailingErr == nil {
-				err = newError("unexpected trailing JSON")
-			} else if trailingErr != io.EOF {
-				err = trailingErr
-			}
+	if opts.mode == Canonical {
+		canonicalSource, canonicalErr := canonicalJSON(src)
+		if canonicalErr != nil {
+			return nil, canonicalErr
 		}
+		value, err = decodeJSON(canonicalSource, opts.jsonValueMapper)
 	} else {
 		value, err = decodeJSON(src, opts.jsonValueMapper)
 	}
 	if err != nil {
 		return nil, err
 	}
-	if opts.hasVocabularies() && (opts.jsonValueMapper != nil || containsVocabularyMarker(src)) {
-		value, err = opts.parseVocabularies(value)
+	if opts.mode != Canonical && opts.hasVocabularies() {
+		if err := opts.validateVocabularies(); err != nil {
+			return nil, err
+		}
+		if opts.jsonValueMapper != nil || containsVocabularyMarker(src) {
+			value, err = opts.parseVocabularyValue(value)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+	if opts.mode == Canonical && opts.hasVocabularies() {
+		if err := opts.validateVocabularies(); err != nil {
+			return nil, err
+		}
+		if containsVocabularyMarker(src) || opts.jsonValueMapper != nil {
+			value, err = opts.parseVocabularyValue(value)
+			if err != nil {
+				return nil, err
+			}
+			value, err = marshalRONValue(reflect.ValueOf(value), opts.customRenderersList(), true)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+	if opts.mode == Canonical {
+		value, err = canonicalizeMarshaledValue(value)
 		if err != nil {
 			return nil, err
 		}
+		if opts.maxNestingDepth > 0 {
+			if err := validateMarshaledDepth(value, opts.maxNestingDepth, 0); err != nil {
+				return nil, err
+			}
+		}
 	}
-	if opts.isPretty {
+	if opts.mode == Pretty {
 		dst.Grow(len(src) * 2)
 		if object, ok := value.(orderedObject); ok && len(object.Members) > 0 {
-			writeObjectMembersWithCustom(dst, objectMembers(object, opts.isCanonical), opts.indent, -1, opts.isCanonical, opts.customRenderersList())
+			writeObjectMembersWithCustom(dst, objectMembers(object, false), opts.indent, -1, false, opts.customRenderersList())
+			dst.WriteByte('\n')
 			return dst.Bytes(), nil
 		}
-		writeValueWithCustom(dst, value, opts.indent, 0, opts.isCanonical, opts.customRenderersList())
+		writeValueWithCustom(dst, value, opts.indent, 0, false, opts.customRenderersList())
+		dst.WriteByte('\n')
 		return dst.Bytes(), nil
 	}
 
 	dst.Grow(len(src))
-	writeCompactValueWithCustom(dst, value, true, opts.isCanonical, opts.customRenderersList())
+	writeCompactValueWithCustom(dst, value, true, opts.mode == Canonical, opts.customRenderersList())
 	return dst.Bytes(), nil
-}
-
-// FromJSONCompact converts JSON to one compact RON value without a trailing newline.
-func FromJSONCompact(src []byte) ([]byte, error) {
-	return FromJSON(src, IsPretty(false))
-}
-
-// FromJSONCompactInto appends one JSON value converted to compact RON to dst without a trailing newline.
-func FromJSONCompactInto(dst *bytes.Buffer, src []byte) ([]byte, error) {
-	return FromJSONInto(dst, src, IsPretty(false))
 }
 
 func decodeJSON(src []byte, mapper jsonValueMapper) (any, error) {

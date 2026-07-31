@@ -17,6 +17,14 @@ func TestSetVocabularyFixtures(t *testing.T) {
 			if err != nil {
 				t.Fatalf("FromJSON set vocabulary: %v", err)
 			}
+			canonicalJSON, err := ToJSON(got, Mode(Canonical))
+			if err != nil {
+				t.Fatalf("ToJSON canonical vocabulary: %v", err)
+			}
+			got, err = FromJSON(canonicalJSON, Mode(Pretty))
+			if err != nil {
+				t.Fatalf("FromJSON sorted vocabulary: %v", err)
+			}
 			assertBytesEqual(t, expected, got)
 
 			jsonBody, err := ToJSON(got)
@@ -27,7 +35,7 @@ func TestSetVocabularyFixtures(t *testing.T) {
 			if err != nil {
 				t.Fatalf("FromJSON set vocabulary round trip: %v", err)
 			}
-			assertBytesEqual(t, expected, roundTrip)
+			assertBytesEqual(t, got, roundTrip)
 		})
 	}
 }
@@ -46,6 +54,22 @@ func TestSetVocabularyInvalidFixtures(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCanonicalSetVocabularyNormalizesPayloads(t *testing.T) {
+	jsonInput := []byte(`{"set":{"#set":["writer","admin","writer"]},"bits":{"#bits":[10,[3,5],1,3,4,[5,7]]}}`)
+	got, err := FromJSON(jsonInput, Mode(Canonical))
+	if err != nil {
+		t.Fatalf("FromJSON canonical set vocabulary: %v", err)
+	}
+	assertBytesEqual(t, []byte("bits{#bits[1 [3 7] 10]} set{#set[admin writer]}"), got)
+
+	ronInput := []byte("set {#set [writer admin writer]} bits {#bits [10 [3 5] 1 3 4 [5 7]]}")
+	jsonOutput, err := ToJSON(ronInput, Mode(Canonical))
+	if err != nil {
+		t.Fatalf("ToJSON canonical set vocabulary: %v", err)
+	}
+	assertBytesEqual(t, []byte(`{"bits":{"#bits":[1,[3,7],10]},"set":{"#set":["admin","writer"]}}`), jsonOutput)
 }
 
 func TestSetVocabularyParsesNativeValues(t *testing.T) {

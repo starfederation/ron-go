@@ -5,174 +5,82 @@ import (
 	"testing"
 )
 
-func TestPrettyRONByteAPIsOmitTrailingNewline(t *testing.T) {
-	multilineWant := []byte("list [\n" +
-		"  {\n" +
-		"    a 1\n" +
-		"    b 2\n" +
-		"  }\n" +
-		"  {\n" +
-		"    c 3\n" +
-		"    d 4\n" +
-		"  }\n" +
-		"]\n" +
-		"outer {\n" +
-		"  a 1\n" +
-		"  b 2\n" +
-		"}")
+func TestPrettyRONByteAPIsEndWithNewline(t *testing.T) {
+	multiline := []byte("list [\n  {\n    a 1\n    b 2\n  }\n  {\n    c 3\n    d 4\n  }\n]\nouter {\n  a 1\n  b 2\n}\n")
 	cases := []struct {
-		name      string
-		jsonInput []byte
-		goValue   any
-		want      []byte
+		name  string
+		input []byte
+		want  []byte
 	}{
-		{
-			name:      "scalar",
-			jsonInput: []byte(`true`),
-			goValue:   true,
-			want:      []byte("true"),
-		},
-		{
-			name:      "list",
-			jsonInput: []byte(`[1,2]`),
-			goValue:   []int{1, 2},
-			want:      []byte("[1 2]"),
-		},
-		{
-			name:      "object",
-			jsonInput: []byte(`{}`),
-			goValue:   map[string]any{},
-			want:      []byte("{}"),
-		},
-		{
-			name:      "brace-elided object members",
-			jsonInput: []byte(`{"a":1,"b":2}`),
-			goValue:   map[string]int{"a": 1, "b": 2},
-			want:      []byte("a 1\nb 2"),
-		},
-		{
-			name:      "multiline indentation",
-			jsonInput: []byte(`{"list":[{"b":2,"a":1},{"d":4,"c":3}],"outer":{"b":2,"a":1}}`),
-			goValue: map[string]any{
-				"list": []any{
-					map[string]int{"b": 2, "a": 1},
-					map[string]int{"d": 4, "c": 3},
-				},
-				"outer": map[string]int{"b": 2, "a": 1},
-			},
-			want: multilineWant,
-		},
+		{"scalar", []byte(`true`), []byte("true\n")},
+		{"array", []byte(`[1,2]`), []byte("[1 2]\n")},
+		{"empty object", []byte(`{}`), []byte("{}\n")},
+		{"brace-elided object", []byte(`{"a":1,"b":2}`), []byte("a 1\nb 2\n")},
+		{"multiline indentation", []byte(`{"list":[{"a":1,"b":2},{"c":3,"d":4}],"outer":{"a":1,"b":2}}`), multiline},
 	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			fromJSON, err := FromJSON(tc.jsonInput)
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := FromJSON(test.input, Mode(Pretty))
 			if err != nil {
 				t.Fatalf("FromJSON: %v", err)
 			}
-			assertBytesEqual(t, tc.want, fromJSON)
+			assertBytesEqual(t, test.want, got)
 
-			var fromJSONBuf bytes.Buffer
-			fromJSONBuf.WriteString("prefix:")
-			fromJSONInto, err := FromJSONInto(&fromJSONBuf, tc.jsonInput)
+			var buffer bytes.Buffer
+			buffer.WriteString("prefix:")
+			got, err = FromJSONInto(&buffer, test.input, Mode(Pretty))
 			if err != nil {
 				t.Fatalf("FromJSONInto: %v", err)
 			}
-			assertBytesEqual(t, append([]byte("prefix:"), tc.want...), fromJSONInto)
-
-			marshaled, err := Marshal(tc.goValue)
-			if err != nil {
-				t.Fatalf("Marshal: %v", err)
-			}
-			assertBytesEqual(t, tc.want, marshaled)
-
-			var marshalBuf bytes.Buffer
-			marshalBuf.WriteString("prefix:")
-			marshaledInto, err := MarshalInto(&marshalBuf, tc.goValue)
-			if err != nil {
-				t.Fatalf("MarshalInto: %v", err)
-			}
-			assertBytesEqual(t, append([]byte("prefix:"), tc.want...), marshaledInto)
+			assertBytesEqual(t, append([]byte("prefix:"), test.want...), got)
 		})
 	}
 }
 
-func TestCompactRONByteAPIsOmitTrailingNewline(t *testing.T) {
-	jsonInput := []byte(`{"a":1,"b":[2,3]}`)
-	value := map[string]any{
-		"a": 1,
-		"b": []int{2, 3},
+func TestCompactAndCanonicalRONByteAPIsOmitTrailingNewline(t *testing.T) {
+	input := []byte(`{"b":1,"a":[2,3]}`)
+	cases := []struct {
+		mode OutputMode
+		want []byte
+	}{
+		{Compact, []byte("b 1 a[2 3]")},
+		{Canonical, []byte("a[2 3] b 1")},
 	}
-	want := []byte("a 1 b[2 3]")
-
-	fromJSON, err := FromJSONCompact(jsonInput)
-	if err != nil {
-		t.Fatalf("FromJSONCompact: %v", err)
+	for _, test := range cases {
+		got, err := FromJSON(input, Mode(test.mode))
+		if err != nil {
+			t.Fatalf("FromJSON %s: %v", test.mode, err)
+		}
+		assertBytesEqual(t, test.want, got)
+		if bytes.HasSuffix(got, []byte("\n")) {
+			t.Fatalf("FromJSON %s added newline", test.mode)
+		}
 	}
-	assertBytesEqual(t, want, fromJSON)
-
-	var fromJSONBuf bytes.Buffer
-	fromJSONBuf.WriteString("prefix:")
-	fromJSONInto, err := FromJSONCompactInto(&fromJSONBuf, jsonInput)
-	if err != nil {
-		t.Fatalf("FromJSONCompactInto: %v", err)
-	}
-	assertBytesEqual(t, append([]byte("prefix:"), want...), fromJSONInto)
-
-	marshaled, err := MarshalCompact(value)
-	if err != nil {
-		t.Fatalf("MarshalCompact: %v", err)
-	}
-	assertBytesEqual(t, want, marshaled)
-
-	var marshalBuf bytes.Buffer
-	marshalBuf.WriteString("prefix:")
-	marshaledInto, err := MarshalCompactInto(&marshalBuf, value)
-	if err != nil {
-		t.Fatalf("MarshalCompactInto: %v", err)
-	}
-	assertBytesEqual(t, append([]byte("prefix:"), want...), marshaledInto)
 }
 
-func TestJSONByteAPIsOmitTrailingNewline(t *testing.T) {
+func TestJSONByteAPIsAndConversionBuffer(t *testing.T) {
 	input := []byte("a 1\nb [2 3]")
 	cases := []struct {
-		name    string
-		options []Option
-		want    []byte
+		mode OutputMode
+		want []byte
 	}{
-		{
-			name: "compact",
-			want: []byte(`{"a":1,"b":[2,3]}`),
-		},
-		{
-			name:    "pretty",
-			options: []Option{PrettyJSON("", "  ")},
-			want: []byte("{\n" +
-				"  \"a\": 1,\n" +
-				"  \"b\": [\n" +
-				"    2,\n" +
-				"    3\n" +
-				"  ]\n" +
-				"}"),
-		},
+		{Compact, []byte(`{"a":1,"b":[2,3]}`)},
+		{Pretty, []byte("{\n  \"a\": 1,\n  \"b\": [\n    2,\n    3\n  ]\n}")},
+		{Canonical, []byte(`{"a":1,"b":[2,3]}`)},
 	}
+	for _, test := range cases {
+		got, err := ToJSON(input, Mode(test.mode))
+		if err != nil {
+			t.Fatalf("ToJSON %s: %v", test.mode, err)
+		}
+		assertBytesEqual(t, test.want, got)
 
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got, err := ToJSON(input, tc.options...)
-			if err != nil {
-				t.Fatalf("ToJSON: %v", err)
-			}
-			assertBytesEqual(t, tc.want, got)
-
-			var buf bytes.Buffer
-			buf.WriteString("prefix:")
-			got, err = ToJSONInto(&buf, input, tc.options...)
-			if err != nil {
-				t.Fatalf("ToJSONInto: %v", err)
-			}
-			assertBytesEqual(t, append([]byte("prefix:"), tc.want...), got)
-		})
+		var buffer bytes.Buffer
+		buffer.WriteString("prefix:")
+		got, err = ToJSONInto(&buffer, input, Mode(test.mode))
+		if err != nil {
+			t.Fatalf("ToJSONInto %s: %v", test.mode, err)
+		}
+		assertBytesEqual(t, append([]byte("prefix:"), test.want...), got)
 	}
 }

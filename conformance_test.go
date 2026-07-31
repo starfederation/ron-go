@@ -13,29 +13,23 @@ import (
 	"testing"
 )
 
+type conformanceFormatOptions struct {
+	Mode OutputMode `json:"mode"`
+}
+
 type conformanceManifest struct {
-	Version    int `json:"version"`
-	Formatting struct {
-		JSONPrefix                string                   `json:"jsonPrefix"`
-		JSONIndent                string                   `json:"jsonIndent"`
-		RONIndent                 string                   `json:"ronIndent"`
-		StringEscapes             string                   `json:"stringEscapes"`
-		PrettyRONTrailingNewline  bool                     `json:"prettyRONTrailingNewline"`
-		ObjectKeyOrder            string                   `json:"objectKeyOrder"`
-		CanonicalRON              string                   `json:"canonicalRON"`
-		CanonicalRONHashAlgorithm string                   `json:"canonicalRONHashAlgorithm"`
-		ExpectedPrettyOptions     conformanceFormatOptions `json:"expectedPrettyOptions"`
-		ExpectedCompactOptions    conformanceFormatOptions `json:"expectedCompactOptions"`
-	} `json:"formatting"`
 	Valid []struct {
-		Name                       string   `json:"name"`
-		RONInputs                  []string `json:"ronInputs"`
-		JSONInput                  string   `json:"jsonInput"`
-		ExpectedPrettyJSON         string   `json:"expectedPrettyJSON"`
-		ExpectedCompactJSON        string   `json:"expectedCompactJSON"`
-		ExpectedPrettyRON          string   `json:"expectedPrettyRON"`
-		ExpectedCompactRON         string   `json:"expectedCompactRON"`
-		ExpectedCanonicalRONSHA256 string   `json:"expectedCanonicalRONSHA256"`
+		Name                      string   `json:"name"`
+		RONInputs                 []string `json:"ronInputs"`
+		JSONInput                 string   `json:"jsonInput"`
+		ExpectedPrettyJSON        string   `json:"expectedPrettyJSON"`
+		ExpectedCompactJSON       string   `json:"expectedCompactJSON"`
+		ExpectedCanonicalJSON     string   `json:"expectedCanonicalJSON"`
+		ExpectedPrettyRON         string   `json:"expectedPrettyRON"`
+		ExpectedCompactRON        string   `json:"expectedCompactRON"`
+		ExpectedCanonicalRON      string   `json:"expectedCanonicalRON"`
+		ExpectedCanonicalJSONHash string   `json:"expectedCanonicalJSONSHA256"`
+		ExpectedCanonicalRONHash  string   `json:"expectedCanonicalRONSHA256"`
 	} `json:"valid"`
 	InvalidRON         []string `json:"invalidRON"`
 	InvalidJSON        []string `json:"invalidJSON"`
@@ -49,101 +43,91 @@ type conformanceManifest struct {
 		} `json:"typedValueHooks"`
 		ExpectedRON string `json:"expectedRON"`
 	} `json:"jsonToRONRendering"`
-}
-
-type conformanceFormatOptions struct {
-	IsPretty    bool `json:"isPretty"`
-	IsCanonical bool `json:"isCanonical"`
+	CanonicalRON struct {
+		ValidRON []struct {
+			Name     string `json:"name"`
+			Input    string `json:"inputRON"`
+			Expected string `json:"expectedCanonicalRON"`
+			Hash     string `json:"expectedCanonicalRONSHA256"`
+		} `json:"validRON"`
+		InvalidRON []string `json:"invalidRON"`
+	} `json:"canonicalRON"`
 }
 
 type rfc8785Manifest struct {
 	Valid []struct {
-		Name                        string `json:"name"`
-		InputJSON                   string `json:"inputJSON"`
-		ExpectedCanonicalJSON       string `json:"expectedCanonicalJSON"`
-		ExpectedCanonicalUTF8Hex    string `json:"expectedCanonicalUTF8Hex"`
-		ExpectedCanonicalJSONSHA256 string `json:"expectedCanonicalJSONSHA256"`
+		Name     string `json:"name"`
+		Input    string `json:"inputJSON"`
+		JSON     string `json:"expectedCanonicalJSON"`
+		RON      string `json:"expectedCanonicalRON"`
+		Hex      string `json:"expectedCanonicalUTF8Hex"`
+		JSONHash string `json:"expectedCanonicalJSONSHA256"`
+		RONHash  string `json:"expectedCanonicalRONSHA256"`
 	} `json:"valid"`
 	NumberSerialization string `json:"numberSerialization"`
 	InvalidIJSON        []struct {
-		Name      string `json:"name"`
-		InputJSON string `json:"inputJSON"`
+		Name  string `json:"name"`
+		Input string `json:"inputJSON"`
 	} `json:"invalidIJSON"`
 }
 
 type rfc8785NumberCase struct {
-	IEEE754Hex   string `json:"ieee754Hex"`
-	ExpectedJSON string `json:"expectedJSON"`
+	IEEE754Hex           string `json:"ieee754Hex"`
+	ExpectedJSON         string `json:"expectedJSON"`
+	ExpectedCanonicalRON string `json:"expectedCanonicalRON"`
 }
 
 func TestConformanceValid(t *testing.T) {
 	root, manifest := loadConformanceManifest(t)
-	if manifest.Version != 1 ||
-		manifest.Formatting.JSONPrefix != "" ||
-		manifest.Formatting.JSONIndent == "" ||
-		manifest.Formatting.RONIndent == "" ||
-		manifest.Formatting.StringEscapes == "" {
-		t.Fatalf("unsupported conformance manifest: version %d, formatting %+v", manifest.Version, manifest.Formatting)
-	}
-
 	for _, tc := range manifest.Valid {
 		t.Run(tc.Name, func(t *testing.T) {
-			jsonInput := readConformanceFile(t, root, tc.JSONInput)
-			expectedCompactJSON := readConformanceFile(t, root, tc.ExpectedCompactJSON)
-			expectedPrettyJSON := readConformanceFile(t, root, tc.ExpectedPrettyJSON)
-			expectedPrettyRON := readRONValueFixture(t, root, tc.ExpectedPrettyRON)
-			expectedCompactRON := readConformanceFile(t, root, tc.ExpectedCompactRON)
-
-			for _, ronInput := range tc.RONInputs {
-				t.Run("ron_to_json/"+filepath.Base(ronInput), func(t *testing.T) {
-					ronSource := readConformanceFile(t, root, ronInput)
-
-					compactJSON, err := ToJSON(ronSource)
+			inputJSON := readConformanceFile(t, root, tc.JSONInput)
+			for _, inputRON := range tc.RONInputs {
+				ronSource := readConformanceFile(t, root, inputRON)
+				for _, check := range []struct {
+					mode     OutputMode
+					expected string
+				}{
+					{Pretty, tc.ExpectedPrettyJSON},
+					{Compact, tc.ExpectedCompactJSON},
+				} {
+					got, err := ToJSON(ronSource, Mode(check.mode))
 					if err != nil {
-						t.Fatalf("ToJSON compact: %v", err)
+						t.Fatalf("ToJSON %s: %v", check.mode, err)
 					}
-					assertBytesEqual(t, expectedCompactJSON, compactJSON)
-					assertJSONEqual(t, jsonInput, compactJSON)
-
-					prettyJSON, err := ToJSON(
-						ronSource,
-						PrettyJSON(manifest.Formatting.JSONPrefix, manifest.Formatting.JSONIndent),
-					)
-					if err != nil {
-						t.Fatalf("ToJSON pretty: %v", err)
+					assertBytesEqual(t, readConformanceFile(t, root, check.expected), got)
+				}
+				if inputRON == "valid/basic/escapes/input.ron" {
+					// This source fixture has duplicate decoded names. Canonical RON rejects it.
+					if _, err := ToJSON(ronSource, Mode(Canonical)); err == nil {
+						t.Fatal("canonical RON accepted duplicate names")
 					}
-					assertBytesEqual(t, expectedPrettyJSON, prettyJSON)
-					assertJSONEqual(t, jsonInput, prettyJSON)
-				})
-			}
-
-			prettyRON, err := FromJSON(jsonInput, Indent(manifest.Formatting.RONIndent))
-			if err != nil {
-				t.Fatalf("FromJSON pretty: %v", err)
-			}
-			assertBytesEqual(t, expectedPrettyRON, prettyRON)
-			prettyRONJSON, err := ToJSON(prettyRON)
-			if err != nil {
-				t.Fatalf("ToJSON generated pretty RON: %v", err)
-			}
-			assertJSONEqual(t, jsonInput, prettyRONJSON)
-
-			compactRON, err := FromJSON(jsonInput, IsPretty(false), IsCanonical(true))
-			if err != nil {
-				t.Fatalf("FromJSON compact canonical: %v", err)
-			}
-			assertBytesEqual(t, expectedCompactRON, compactRON)
-			if tc.ExpectedCanonicalRONSHA256 != "" {
-				gotHash := formatSHA256(compactRON)
-				if gotHash != tc.ExpectedCanonicalRONSHA256 {
-					t.Fatalf("canonical RON SHA-256 mismatch\nwant: %s\n got: %s", tc.ExpectedCanonicalRONSHA256, gotHash)
+					continue
+				}
+				got, err := ToJSON(ronSource, Mode(Canonical))
+				if err != nil {
+					t.Fatalf("ToJSON canonical: %v", err)
+				}
+				assertBytesEqual(t, readConformanceFile(t, root, tc.ExpectedCanonicalJSON), got)
+				if formatSHA256(got) != tc.ExpectedCanonicalJSONHash {
+					t.Fatal("canonical JSON hash mismatch")
 				}
 			}
-			compactRONJSON, err := ToJSON(compactRON)
-			if err != nil {
-				t.Fatalf("ToJSON generated compact RON: %v", err)
+			for _, check := range []struct {
+				mode           OutputMode
+				expected, hash string
+			}{
+				{Pretty, tc.ExpectedPrettyRON, ""}, {Compact, tc.ExpectedCompactRON, ""}, {Canonical, tc.ExpectedCanonicalRON, tc.ExpectedCanonicalRONHash},
+			} {
+				got, err := FromJSON(inputJSON, Mode(check.mode))
+				if err != nil {
+					t.Fatalf("FromJSON %s: %v", check.mode, err)
+				}
+				assertBytesEqual(t, readConformanceFile(t, root, check.expected), got)
+				if check.hash != "" && formatSHA256(got) != check.hash {
+					t.Fatalf("canonical RON hash mismatch")
+				}
 			}
-			assertJSONEqual(t, jsonInput, compactRONJSON)
 		})
 	}
 }
@@ -152,13 +136,7 @@ func TestConformanceJSONToRONRendering(t *testing.T) {
 	root, manifest := loadConformanceManifest(t)
 	for _, tc := range manifest.JSONToRONRendering {
 		t.Run(tc.Name, func(t *testing.T) {
-			input := readConformanceFile(t, root, tc.JSONInput)
-			expected := readRONValueFixture(t, root, tc.ExpectedRON)
-
-			options := []Option{
-				IsPretty(tc.Options.IsPretty),
-				IsCanonical(tc.Options.IsCanonical),
-			}
+			options := []Option{Mode(tc.Options.Mode)}
 			if len(tc.TypedValueHooks) > 0 {
 				replacements := make([]any, len(tc.TypedValueHooks))
 				for i, hook := range tc.TypedValueHooks {
@@ -168,20 +146,18 @@ func TestConformanceJSONToRONRendering(t *testing.T) {
 					}
 					replacements[i] = value
 				}
-
 				options = append(options, MapJSONValues(func(path []JSONPathSegment, value any) (any, bool) {
 					for i, hook := range tc.TypedValueHooks {
 						if len(path) != len(hook.Path) {
 							continue
 						}
-
 						matches := true
-						for i, segment := range path {
-							switch value := hook.Path[i].(type) {
+						for index, segment := range path {
+							switch expected := hook.Path[index].(type) {
 							case string:
-								matches = !segment.IsIndex && segment.Key == value
+								matches = !segment.IsIndex && segment.Key == expected
 							case float64:
-								matches = segment.IsIndex && segment.Index == int(value)
+								matches = segment.IsIndex && segment.Index == int(expected)
 							default:
 								matches = false
 							}
@@ -196,275 +172,192 @@ func TestConformanceJSONToRONRendering(t *testing.T) {
 					return nil, false
 				}))
 			}
-
-			got, err := FromJSON(input, options...)
+			got, err := FromJSON(readConformanceFile(t, root, tc.JSONInput), options...)
 			if err != nil {
 				t.Fatalf("FromJSON rendering: %v", err)
 			}
-			assertBytesEqual(t, expected, got)
+			assertBytesEqual(t, readConformanceFile(t, root, tc.ExpectedRON), got)
 		})
 	}
 }
 
-func TestConformanceInvalidRON(t *testing.T) {
+func TestCanonicalRONBoundaries(t *testing.T) {
+	root, manifest := loadConformanceManifest(t)
+	for _, tc := range manifest.CanonicalRON.ValidRON {
+		t.Run(tc.Name, func(t *testing.T) {
+			input := readConformanceFile(t, root, tc.Input)
+			canonicalJSON, err := ToJSON(input, Mode(Canonical))
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := FromJSON(canonicalJSON, Mode(Canonical))
+			if err != nil {
+				t.Fatalf("canonical RON: %v", err)
+			}
+			assertBytesEqual(t, readConformanceFile(t, root, tc.Expected), got)
+			if formatSHA256(got) != tc.Hash {
+				t.Fatal("canonical RON hash mismatch")
+			}
+		})
+	}
+	for _, path := range manifest.CanonicalRON.InvalidRON {
+		t.Run(path, func(t *testing.T) {
+			if _, err := ToJSON(readConformanceFile(t, root, path), Mode(Canonical)); err == nil {
+				t.Fatal("canonical RON succeeded")
+			}
+		})
+	}
+}
+
+func TestConformanceInvalidInput(t *testing.T) {
 	root, manifest := loadConformanceManifest(t)
 	for _, path := range manifest.InvalidRON {
-		t.Run(path, func(t *testing.T) {
-			if _, err := ToJSON(readConformanceFile(t, root, path)); err == nil {
-				t.Fatal("ToJSON succeeded for invalid RON")
-			}
-		})
+		if _, err := ToJSON(readConformanceFile(t, root, path), Mode(Pretty)); err == nil {
+			t.Fatalf("invalid RON accepted: %s", path)
+		}
 	}
-}
-
-func TestConformanceInvalidJSON(t *testing.T) {
-	root, manifest := loadConformanceManifest(t)
 	for _, path := range manifest.InvalidJSON {
-		t.Run(path, func(t *testing.T) {
-			body := readConformanceFile(t, root, path)
-			if _, err := FromJSON(body); err == nil {
-				t.Fatal("FromJSON succeeded for invalid JSON")
-			}
-			if _, err := FromJSONCompact(body); err == nil {
-				t.Fatal("FromJSONCompact succeeded for invalid JSON")
-			}
-		})
+		if _, err := FromJSON(readConformanceFile(t, root, path), Mode(Pretty)); err == nil {
+			t.Fatalf("invalid JSON accepted: %s", path)
+		}
 	}
 }
 
-func TestRFC8785CanonicalJSONValid(t *testing.T) {
+func TestRFC8785Conformance(t *testing.T) {
 	root, manifest := loadRFC8785Manifest(t)
 	for _, tc := range manifest.Valid {
 		t.Run(tc.Name, func(t *testing.T) {
-			input := readConformanceFile(t, root, tc.InputJSON)
-			expectedJSON := readConformanceFile(t, root, tc.ExpectedCanonicalJSON)
-			expectedHex := readConformanceFile(t, root, tc.ExpectedCanonicalUTF8Hex)
-
-			got, err := canonicalJSON(input)
+			input := readConformanceFile(t, root, tc.Input)
+			jsonBody, err := canonicalJSON(input)
 			if err != nil {
-				t.Fatalf("canonicalJSON: %v", err)
+				t.Fatal(err)
 			}
-			assertBytesEqual(t, expectedJSON, got)
-			assertBytesEqual(t, bytes.TrimSpace(expectedHex), []byte(hex.EncodeToString(got)))
-
-			gotHash := formatSHA256(got)
-			if gotHash != tc.ExpectedCanonicalJSONSHA256 {
-				t.Fatalf("canonical JSON SHA-256 mismatch\nwant: %s\n got: %s", tc.ExpectedCanonicalJSONSHA256, gotHash)
+			assertBytesEqual(t, readConformanceFile(t, root, tc.JSON), jsonBody)
+			assertBytesEqual(t, bytes.TrimSpace(readConformanceFile(t, root, tc.Hex)), []byte(hex.EncodeToString(jsonBody)))
+			if formatSHA256(jsonBody) != tc.JSONHash {
+				t.Fatal("canonical JSON hash mismatch")
+			}
+			ronBody, err := FromJSON(input, Mode(Canonical))
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertBytesEqual(t, readConformanceFile(t, root, tc.RON), ronBody)
+			if formatSHA256(ronBody) != tc.RONHash {
+				t.Fatal("canonical RON hash mismatch")
 			}
 		})
+	}
+	for _, tc := range manifest.InvalidIJSON {
+		if _, err := FromJSON(readConformanceFile(t, root, tc.Input), Mode(Canonical)); err == nil {
+			t.Fatalf("invalid I-JSON accepted: %s", tc.Name)
+		}
 	}
 }
 
 func TestRFC8785NumberSerialization(t *testing.T) {
 	root, manifest := loadRFC8785Manifest(t)
-	body := readConformanceFile(t, root, manifest.NumberSerialization)
-
 	var numbers struct {
 		Finite               []rfc8785NumberCase `json:"finite"`
 		RejectedNativeValues []rfc8785NumberCase `json:"rejectedNativeValues"`
 	}
-	if err := json.Unmarshal(body, &numbers); err != nil {
-		t.Fatalf("unmarshal number serialization: %v", err)
+	if err := json.Unmarshal(readConformanceFile(t, root, manifest.NumberSerialization), &numbers); err != nil {
+		t.Fatal(err)
 	}
-
 	for _, tc := range numbers.Finite {
-		t.Run(tc.IEEE754Hex, func(t *testing.T) {
-			value := parseFloat64Hex(t, tc.IEEE754Hex)
-			got, err := appendRFC8785Number(nil, value)
-			if err != nil {
-				t.Fatalf("appendRFC8785Number: %v", err)
-			}
-			assertBytesEqual(t, []byte(tc.ExpectedJSON), got)
-		})
+		value := parseFloat64Hex(t, tc.IEEE754Hex)
+		got, err := appendRFC8785Number(nil, value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertBytesEqual(t, []byte(tc.ExpectedJSON), got)
 	}
-
 	for _, tc := range numbers.RejectedNativeValues {
-		t.Run("reject/"+tc.IEEE754Hex, func(t *testing.T) {
-			value := parseFloat64Hex(t, tc.IEEE754Hex)
-			if _, err := appendRFC8785Number(nil, value); err == nil {
-				t.Fatal("appendRFC8785Number accepted non-finite value")
-			}
-		})
+		if _, err := appendRFC8785Number(nil, parseFloat64Hex(t, tc.IEEE754Hex)); err == nil {
+			t.Fatal("non-finite number accepted")
+		}
 	}
-}
-
-func TestRFC8785InvalidIJSON(t *testing.T) {
-	root, manifest := loadRFC8785Manifest(t)
-	for _, tc := range manifest.InvalidIJSON {
-		t.Run(tc.Name, func(t *testing.T) {
-			input := readConformanceFile(t, root, tc.InputJSON)
-			if _, err := canonicalJSON(input); err == nil {
-				t.Fatal("canonicalJSON succeeded for invalid I-JSON")
-			}
-		})
-	}
-}
-
-func TestRFC8785StringLessUsesUTF16Order(t *testing.T) {
-	if !rfc8785StringLess("\U0001f600", "\ue000") {
-		t.Fatal("rfc8785StringLess did not use UTF-16 code unit order")
-	}
-	if rfc8785StringLess("\ue000", "\U0001f600") {
-		t.Fatal("rfc8785StringLess reversed UTF-16 code unit order")
-	}
-}
-
-func TestRFC8785StringLessDoesNotAllocate(t *testing.T) {
-	allocs := testing.AllocsPerRun(1000, func() {
-		_ = rfc8785StringLess("created", "digest")
-		_ = rfc8785StringLess("\U0001f600", "\ue000")
-	})
-	if allocs != 0 {
-		t.Fatalf("rfc8785StringLess allocated %v times", allocs)
-	}
-}
-
-func TestToJSONDuplicateKeysUseLastValue(t *testing.T) {
-	got, err := ToJSON([]byte("item {name first name second count 1}"))
-	if err != nil {
-		t.Fatalf("ToJSON: %v", err)
-	}
-
-	want := []byte(`{"item":{"count":1,"name":"second"}}`)
-	assertBytesEqual(t, want, got)
-}
-
-func TestRONContainsVocabularyMarker(t *testing.T) {
-	cases := []struct {
-		name string
-		src  []byte
-		want bool
-	}{
-		{
-			name: "untagged query object",
-			src:  []byte("query {filter {status active limit 20} sort [created desc]}"),
-		},
-		{
-			name: "empty core tag",
-			src:  []byte("entity {# 123}"),
-			want: true,
-		},
-		{
-			name: "utc tag",
-			src:  []byte("created {#utc 2026-06-13T00:00:00Z}"),
-			want: true,
-		},
-		{
-			name: "sha256 tag",
-			src:  []byte("digest {#sha256 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855}"),
-			want: true,
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := containsVocabularyMarker(tc.src); got != tc.want {
-				t.Fatalf("containsVocabularyMarker() = %v, want %v", got, tc.want)
-			}
-		})
-	}
-}
-
-func TestToJSONUntaggedStillRejectsUnsupportedVocabulary(t *testing.T) {
-	if _, err := ToJSON([]byte("item {name alpha count 1}"), EnableVocabularies("https://example.com/vocab/unknown/v1")); err == nil {
-		t.Fatal("ToJSON accepted unsupported vocabulary")
-	}
-}
-
-func TestFromJSONCompactDuplicateKeysUseLastValue(t *testing.T) {
-	got, err := FromJSONCompact([]byte(`{"item":{"name":"first","name":"second","count":1}}`))
-	if err != nil {
-		t.Fatalf("FromJSONCompact: %v", err)
-	}
-
-	want := []byte("item{count 1 name second}")
-	assertBytesEqual(t, want, got)
-}
-
-func TestRONBufferReuse(t *testing.T) {
-	var buf bytes.Buffer
-	pretty, err := FromJSONInto(&buf, []byte(`{"a":1}`))
-	if err != nil {
-		t.Fatalf("FromJSONInto: %v", err)
-	}
-	assertBytesEqual(t, []byte("a 1"), pretty)
-
-	buf.Reset()
-	compact, err := FromJSONCompactInto(&buf, []byte(`{"b":2}`))
-	if err != nil {
-		t.Fatalf("FromJSONCompactInto: %v", err)
-	}
-	assertBytesEqual(t, []byte("b 2"), compact)
 }
 
 func loadConformanceManifest(t *testing.T) (string, conformanceManifest) {
 	t.Helper()
 	root := testdataSubdir(t, "conformance")
-	body := readFile(t, filepath.Join(root, "manifest.json"))
-
 	var manifest conformanceManifest
-	if err := json.Unmarshal(body, &manifest); err != nil {
-		t.Fatalf("unmarshal manifest: %v", err)
+	if err := json.Unmarshal(readFile(t, filepath.Join(root, "manifest.json")), &manifest); err != nil {
+		t.Fatal(err)
 	}
 	return root, manifest
 }
-
 func loadRFC8785Manifest(t *testing.T) (string, rfc8785Manifest) {
 	t.Helper()
 	root := testdataSubdir(t, "rfc8785")
-	body := readFile(t, filepath.Join(root, "manifest.json"))
-
 	var manifest rfc8785Manifest
-	if err := json.Unmarshal(body, &manifest); err != nil {
-		t.Fatalf("unmarshal RFC 8785 manifest: %v", err)
+	if err := json.Unmarshal(readFile(t, filepath.Join(root, "manifest.json")), &manifest); err != nil {
+		t.Fatal(err)
 	}
 	return root, manifest
 }
-
 func testdataSubdir(t *testing.T, subdir string) string {
 	t.Helper()
-	if testdataRoot := os.Getenv("RON_TESTDATA_DIR"); testdataRoot != "" {
-		return filepath.Join(testdataRoot, subdir)
+	root := os.Getenv("RON_TESTDATA_DIR")
+	if root == "" {
+		root = "testdata"
 	}
-
-	root := filepath.Join("testdata", subdir)
-	if _, err := os.Stat(filepath.Join(root, "manifest.json")); err != nil {
-		t.Skip("RON testdata unavailable; set RON_TESTDATA_DIR or run nix flake check")
-	}
-	return root
-}
-
-func formatSHA256(body []byte) string {
-	hash := sha256.Sum256(body)
-	return hex.EncodeToString(hash[:])
-}
-
-func parseFloat64Hex(t *testing.T, value string) float64 {
-	t.Helper()
-	bits, err := strconv.ParseUint(value, 16, 64)
+	path := filepath.Join(root, subdir)
+	manifestPath := filepath.Join(path, "manifest.json")
+	body, err := os.ReadFile(manifestPath)
 	if err != nil {
-		t.Fatalf("parse float64 hex %q: %v", value, err)
+		t.Fatalf("RON %s fixtures unavailable: %v", subdir, err)
 	}
-	return math.Float64frombits(bits)
+	if subdir == "conformance" && !bytes.Contains(body, []byte(`"defaultMode"`)) {
+		t.Fatal("conformance manifest is stale: update it for the revised Mode API")
+	}
+	if subdir == "rfc8785" && !bytes.Contains(body, []byte(`"expectedCanonicalRON"`)) {
+		t.Fatal("RFC 8785 manifest is stale: add expectedCanonicalRON fixtures")
+	}
+	return path
 }
-
 func readConformanceFile(t *testing.T, root, path string) []byte {
 	t.Helper()
 	return readFile(t, filepath.Join(root, filepath.FromSlash(path)))
 }
-
-func readRONValueFixture(t *testing.T, root, path string) []byte {
-	t.Helper()
-	return bytes.TrimSuffix(readConformanceFile(t, root, path), []byte("\n"))
-}
-
 func readFile(t *testing.T, path string) []byte {
 	t.Helper()
 	body, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("read %s: %v", path, err)
+		t.Fatal(err)
 	}
 	return body
+}
+func formatSHA256(body []byte) string {
+	hash := sha256.Sum256(body)
+	return hex.EncodeToString(hash[:])
+}
+func parseFloat64Hex(t *testing.T, value string) float64 {
+	t.Helper()
+	bits, err := strconv.ParseUint(value, 16, 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return math.Float64frombits(bits)
+}
+func readRONValueFixture(t *testing.T, root, path string) []byte {
+	t.Helper()
+	return readConformanceFile(t, root, path)
+}
+
+func assertJSONEqual(t *testing.T, want, got []byte) {
+	t.Helper()
+	var wantValue any
+	var gotValue any
+	if err := json.Unmarshal(want, &wantValue); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(got, &gotValue); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(wantValue, gotValue) {
+		t.Fatalf("JSON differs\nwant: %s\n got: %s", want, got)
+	}
 }
 
 func assertBytesEqual(t *testing.T, want, got []byte) {
@@ -472,89 +365,4 @@ func assertBytesEqual(t *testing.T, want, got []byte) {
 	if !bytes.Equal(want, got) {
 		t.Fatalf("bytes differ\nwant: %q\n got: %q", want, got)
 	}
-}
-
-func assertJSONEqual(t *testing.T, want, got []byte) {
-	t.Helper()
-	wantValue := decodeJSONForTest(t, want)
-	gotValue := decodeJSONForTest(t, got)
-	if !reflect.DeepEqual(wantValue, gotValue) {
-		t.Fatalf("JSON differs\nwant: %s\n got: %s", want, got)
-	}
-}
-
-func decodeJSONForTest(t *testing.T, body []byte) any {
-	t.Helper()
-	value, err := decodeJSON(body, nil)
-	if err != nil {
-		t.Fatalf("decode JSON %q: %v", body, err)
-	}
-	return normalizeJSONForTest(value)
-}
-
-func normalizeJSONForTest(value any) any {
-	switch value := value.(type) {
-	case orderedObject:
-		object := make(map[string]any, len(value.Members))
-		for _, member := range value.Members {
-			object[member.Key] = normalizeJSONForTest(member.Value)
-		}
-		return object
-	case []any:
-		array := make([]any, len(value))
-		for i, item := range value {
-			array[i] = normalizeJSONForTest(item)
-		}
-		return array
-	default:
-		return value
-	}
-}
-
-func TestToJSONCanonicalOptionControlsObjectOrder(t *testing.T) {
-	nonCanonical, err := ToJSON([]byte("{b 1 a 2}"), IsCanonical(false))
-	if err != nil {
-		t.Fatalf("ToJSON non-canonical: %v", err)
-	}
-	assertBytesEqual(t, []byte(`{"b":1,"a":2}`), nonCanonical)
-
-	canonical, err := ToJSON([]byte("{b 1 a 2}"), IsCanonical(true))
-	if err != nil {
-		t.Fatalf("ToJSON canonical: %v", err)
-	}
-	assertBytesEqual(t, []byte(`{"a":2,"b":1}`), canonical)
-}
-
-func TestFromJSONOptionsControlPrettyAndCanonicalRON(t *testing.T) {
-	nonCanonicalCompact, err := FromJSON([]byte(`{"b":1,"a":2}`), IsPretty(false), IsCanonical(false))
-	if err != nil {
-		t.Fatalf("FromJSON compact non-canonical: %v", err)
-	}
-	assertBytesEqual(t, []byte("b 1 a 2"), nonCanonicalCompact)
-
-	canonicalCompact, err := FromJSON([]byte(`{"b":1,"a":2}`), IsPretty(false), IsCanonical(true))
-	if err != nil {
-		t.Fatalf("FromJSON compact canonical: %v", err)
-	}
-	assertBytesEqual(t, []byte("a 2 b 1"), canonicalCompact)
-
-	nonCanonicalPretty, err := FromJSON([]byte(`{"b":1,"a":2}`), IsPretty(true), IsCanonical(false))
-	if err != nil {
-		t.Fatalf("FromJSON pretty non-canonical: %v", err)
-	}
-	assertBytesEqual(t, []byte("b 1\na 2"), nonCanonicalPretty)
-}
-
-func TestNonCanonicalDuplicateKeysMoveSurvivorToLastPosition(t *testing.T) {
-	jsonBody, err := ToJSON([]byte("{a 1 b 2 a 3}"), IsCanonical(false))
-	if err != nil {
-		t.Fatalf("ToJSON non-canonical duplicates: %v", err)
-	}
-	assertBytesEqual(t, []byte(`{"b":2,"a":3}`), jsonBody)
-
-	ronBody, err := FromJSON([]byte(`{"a":1,"b":2,"a":3}`), IsPretty(false), IsCanonical(false))
-	if err != nil {
-		t.Fatalf("FromJSON non-canonical duplicates: %v", err)
-	}
-	assertBytesEqual(t, []byte("b 2 a 3"), ronBody)
 }

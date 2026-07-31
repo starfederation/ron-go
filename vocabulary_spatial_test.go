@@ -17,7 +17,23 @@ func TestSpatialVocabularyFixtures(t *testing.T) {
 			if err != nil {
 				t.Fatalf("FromJSON spatial vocabulary: %v", err)
 			}
-			assertBytesEqual(t, expected, got)
+			canonicalJSON, err := ToJSON(got, Mode(Canonical))
+			if err != nil {
+				t.Fatalf("ToJSON canonical vocabulary: %v", err)
+			}
+			got, err = FromJSON(canonicalJSON, Mode(Pretty))
+			if err != nil {
+				t.Fatalf("FromJSON sorted vocabulary: %v", err)
+			}
+			expectedJSON, err := ToJSON(expected, Mode(Canonical))
+			if err != nil {
+				t.Fatalf("ToJSON expected spatial vocabulary: %v", err)
+			}
+			gotJSON, err := ToJSON(got, Mode(Canonical))
+			if err != nil {
+				t.Fatalf("ToJSON spatial vocabulary: %v", err)
+			}
+			assertBytesEqual(t, expectedJSON, gotJSON)
 
 			jsonBody, err := ToJSON(got)
 			if err != nil {

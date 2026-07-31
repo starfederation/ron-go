@@ -13,44 +13,27 @@ import (
 	"strings"
 )
 
-// Marshal returns value encoded as RON without a trailing newline.
-// By default it emits pretty RON.
-func Marshal(value any, options ...Option) ([]byte, error) {
-	var buf bytes.Buffer
-	return MarshalInto(&buf, value, options...)
+// Marshal returns value encoded as compact RON without a trailing newline.
+func Marshal(value any) ([]byte, error) {
+	return marshalWithMode(value, Compact)
 }
 
-// MarshalInto appends value encoded as RON to dst without a trailing newline.
-// By default it emits pretty RON.
-func MarshalInto(dst *bytes.Buffer, value any, options ...Option) ([]byte, error) {
-	if dst == nil {
-		return Marshal(value, options...)
-	}
+// MarshalPretty returns value encoded as pretty RON with a trailing newline.
+func MarshalPretty(value any) ([]byte, error) {
+	return marshalWithMode(value, Pretty)
+}
 
-	opts := marshalOptions(options...)
-	if err := writeMarshaledValue(dst, value, opts); err != nil {
+// MarshalCanonical returns value encoded as canonical RON without a trailing newline.
+func MarshalCanonical(value any) ([]byte, error) {
+	return marshalWithMode(value, Canonical)
+}
+
+func marshalWithMode(value any, mode OutputMode) ([]byte, error) {
+	var buf bytes.Buffer
+	if err := writeMarshaledValue(&buf, value, marshalOptions(Mode(mode))); err != nil {
 		return nil, err
 	}
-	return dst.Bytes(), nil
-}
-
-// MarshalCompact returns value encoded as compact RON without a trailing newline.
-func MarshalCompact(value any) ([]byte, error) {
-	var buf bytes.Buffer
-	return MarshalCompactInto(&buf, value)
-}
-
-// MarshalCompactInto appends value encoded as compact RON to dst without a trailing newline.
-func MarshalCompactInto(dst *bytes.Buffer, value any) ([]byte, error) {
-	if dst == nil {
-		return MarshalCompact(value)
-	}
-
-	opts := marshalOptions(IsPretty(false))
-	if err := writeMarshaledValue(dst, value, opts); err != nil {
-		return nil, err
-	}
-	return dst.Bytes(), nil
+	return buf.Bytes(), nil
 }
 
 // Encoder writes RON values to an output stream.
@@ -73,7 +56,9 @@ func (e *Encoder) Encode(value any) error {
 	if err := writeMarshaledValue(&buf, value, e.opts); err != nil {
 		return err
 	}
-	buf.WriteByte('\n')
+	if e.opts.mode != Pretty {
+		buf.WriteByte('\n')
+	}
 
 	written, err := e.w.Write(buf.Bytes())
 	if err != nil {
@@ -85,53 +70,53 @@ func (e *Encoder) Encode(value any) error {
 	return nil
 }
 
-// SetIndent sets pretty RON output indentation. An empty indent uses two spaces.
+// SetIndent selects pretty RON output indentation. An empty indent uses two spaces.
 func (e *Encoder) SetIndent(indent string) {
 	if indent == "" {
 		indent = "  "
 	}
-	e.opts.isPretty = true
+	e.opts.mode = Pretty
 	e.opts.indent = indent
 }
 
-// SetPretty selects pretty or compact RON output.
-func (e *Encoder) SetPretty(pretty bool) {
-	e.opts.isPretty = pretty
-	if pretty && e.opts.indent == "" {
-		e.opts.indent = "  "
+// SetMode selects pretty, compact, or canonical output.
+func (e *Encoder) SetMode(mode OutputMode) {
+	switch mode {
+	case Pretty, Compact, Canonical:
+		e.opts.mode = mode
+		if mode == Pretty && e.opts.indent == "" {
+			e.opts.indent = "  "
+		}
 	}
-}
-
-// SetCanonical selects canonical object key ordering.
-func (e *Encoder) SetCanonical(canonical bool) {
-	e.opts.isCanonical = canonical
 }
 
 func marshalOptions(options ...Option) optionState {
 	opts := optionState{
-		formatOptions: formatOptions{
-			indent:      "  ",
-			isPretty:    true,
-			isCanonical: true,
-		},
+		formatOptions:  formatOptions{mode: Compact},
 		vocabularyMask: defaultVocabularySet,
 	}
 	for _, option := range options {
 		option(&opts)
 	}
-	if opts.isPretty && opts.indent == "" {
+	if opts.mode == Pretty && opts.indent == "" {
 		opts.indent = "  "
 	}
-	if !opts.isPretty {
+	if opts.mode != Pretty {
 		opts.indent = ""
 	}
 	return opts
 }
 
 func writeMarshaledValue(buf *bytes.Buffer, value any, opts optionState) error {
-	normalized, err := marshalRONValue(reflect.ValueOf(value), opts.customRenderersList())
+	normalized, err := marshalRONValue(reflect.ValueOf(value), opts.customRenderersList(), opts.mode == Canonical)
 	if err != nil {
 		return err
+	}
+	if opts.mode == Canonical {
+		normalized, err = canonicalizeMarshaledValue(normalized)
+		if err != nil {
+			return err
+		}
 	}
 	if opts.maxNestingDepth > 0 {
 		if err := validateMarshaledDepth(normalized, opts.maxNestingDepth, 0); err != nil {
@@ -139,24 +124,27 @@ func writeMarshaledValue(buf *bytes.Buffer, value any, opts optionState) error {
 		}
 	}
 
-	if opts.isPretty {
+	if opts.mode == Pretty {
 		switch object := normalized.(type) {
 		case orderedObject:
 			if len(object.Members) > 0 {
-				writeObjectMembersWithCustom(buf, objectMembers(object, opts.isCanonical), opts.indent, -1, opts.isCanonical, opts.customRenderersList())
+				writeObjectMembersWithCustom(buf, objectMembers(object, false), opts.indent, -1, false, opts.customRenderersList())
+				buf.WriteByte('\n')
 				return nil
 			}
 		case map[string]any:
 			if len(object) > 0 {
-				writeObjectMembersWithCustom(buf, objectMembers(object, opts.isCanonical), opts.indent, -1, opts.isCanonical, opts.customRenderersList())
+				writeObjectMembersWithCustom(buf, objectMembers(object, false), opts.indent, -1, false, opts.customRenderersList())
+				buf.WriteByte('\n')
 				return nil
 			}
 		}
-		writeValueWithCustom(buf, normalized, opts.indent, 0, opts.isCanonical, opts.customRenderersList())
+		writeValueWithCustom(buf, normalized, opts.indent, 0, false, opts.customRenderersList())
+		buf.WriteByte('\n')
 		return nil
 	}
 
-	writeCompactValueWithCustom(buf, normalized, true, opts.isCanonical, opts.customRenderersList())
+	writeCompactValueWithCustom(buf, normalized, true, opts.mode == Canonical, opts.customRenderersList())
 	return nil
 }
 
@@ -202,12 +190,12 @@ func validateMarshaledDepth(value any, maxDepth, depth int) error {
 	return nil
 }
 
-func marshalRONValue(value reflect.Value, renderers []CustomRenderFunc) (any, error) {
+func marshalRONValue(value reflect.Value, renderers []CustomRenderFunc, canonical bool) (any, error) {
 	if !value.IsValid() {
 		return nil, nil
 	}
 	if value.CanInterface() {
-		if normalized, ok, err := marshalKnownRONValue(value.Interface(), renderers); ok || err != nil {
+		if normalized, ok, err := marshalKnownRONValue(value.Interface(), renderers, canonical); ok || err != nil {
 			return normalized, err
 		}
 	}
@@ -217,7 +205,7 @@ func marshalRONValue(value reflect.Value, renderers []CustomRenderFunc) (any, er
 		if value.IsNil() {
 			return nil, nil
 		}
-		return marshalRONValue(value.Elem(), renderers)
+		return marshalRONValue(value.Elem(), renderers, canonical)
 	case reflect.Bool:
 		return value.Bool(), nil
 	case reflect.String:
@@ -233,7 +221,7 @@ func marshalRONValue(value reflect.Value, renderers []CustomRenderFunc) (any, er
 		}
 		return floatValue, nil
 	case reflect.Array:
-		return marshalArrayValue(value, renderers)
+		return marshalArrayValue(value, renderers, canonical)
 	case reflect.Slice:
 		if value.IsNil() {
 			return nil, nil
@@ -241,18 +229,18 @@ func marshalRONValue(value reflect.Value, renderers []CustomRenderFunc) (any, er
 		if value.Type().Elem().Kind() == reflect.Uint8 {
 			return base64.StdEncoding.EncodeToString(value.Bytes()), nil
 		}
-		return marshalArrayValue(value, renderers)
+		return marshalArrayValue(value, renderers, canonical)
 	case reflect.Map:
-		return marshalMapValue(value, renderers)
+		return marshalMapValue(value, renderers, canonical)
 	case reflect.Struct:
-		return marshalStructValue(value, renderers)
+		return marshalStructValue(value, renderers, canonical)
 	}
 	return nil, fmt.Errorf("ron: unsupported type %s", value.Type())
 }
 
-func marshalKnownRONValue(value any, renderers []CustomRenderFunc) (any, bool, error) {
+func marshalKnownRONValue(value any, renderers []CustomRenderFunc, canonical bool) (any, bool, error) {
 	if member, ok := typedTaggedMemberWithCustom(value, renderers); ok {
-		payload, err := marshalRONValue(reflect.ValueOf(member.Value), renderers)
+		payload, err := marshalRONValue(reflect.ValueOf(member.Value), renderers, canonical)
 		if err != nil {
 			return nil, true, err
 		}
@@ -274,11 +262,17 @@ func marshalKnownRONValue(value any, renderers []CustomRenderFunc) (any, bool, e
 		if err != nil {
 			return nil, true, err
 		}
+		if canonical {
+			body, err = canonicalJSON(body)
+			if err != nil {
+				return nil, true, err
+			}
+		}
 		decoded, err := decodeJSON(body, nil)
 		if err != nil {
 			return nil, true, err
 		}
-		normalized, err := marshalRONValue(reflect.ValueOf(decoded), renderers)
+		normalized, err := marshalRONValue(reflect.ValueOf(decoded), renderers, canonical)
 		return normalized, true, err
 	}
 	if marshaler, ok := value.(encoding.TextMarshaler); ok {
@@ -296,22 +290,22 @@ func marshalKnownRONValue(value any, renderers []CustomRenderFunc) (any, bool, e
 		if value == nil {
 			return nil, true, nil
 		}
-		array, err := marshalAnySlice(value, renderers)
+		array, err := marshalAnySlice(value, renderers, canonical)
 		return array, true, err
 	case multilineArray:
 		if value == nil {
 			return nil, true, nil
 		}
-		array, err := marshalAnySlice([]any(value), renderers)
+		array, err := marshalAnySlice([]any(value), renderers, canonical)
 		return multilineArray(array), true, err
 	case map[string]any:
 		if value == nil {
 			return nil, true, nil
 		}
-		object, err := marshalStringMap(value, renderers)
+		object, err := marshalStringMap(value, renderers, canonical)
 		return object, true, err
 	case orderedObject:
-		object, err := marshalOrderedObject(value, renderers)
+		object, err := marshalOrderedObject(value, renderers, canonical)
 		return object, true, err
 	}
 	return nil, false, nil
@@ -322,10 +316,10 @@ func isNilPointerInterface(value any) bool {
 	return reflected.IsValid() && reflected.Kind() == reflect.Pointer && reflected.IsNil()
 }
 
-func marshalAnySlice(value []any, renderers []CustomRenderFunc) ([]any, error) {
+func marshalAnySlice(value []any, renderers []CustomRenderFunc, canonical bool) ([]any, error) {
 	array := make([]any, len(value))
 	for i, child := range value {
-		normalized, err := marshalRONValue(reflect.ValueOf(child), renderers)
+		normalized, err := marshalRONValue(reflect.ValueOf(child), renderers, canonical)
 		if err != nil {
 			return nil, err
 		}
@@ -334,10 +328,10 @@ func marshalAnySlice(value []any, renderers []CustomRenderFunc) ([]any, error) {
 	return array, nil
 }
 
-func marshalStringMap(value map[string]any, renderers []CustomRenderFunc) (map[string]any, error) {
+func marshalStringMap(value map[string]any, renderers []CustomRenderFunc, canonical bool) (map[string]any, error) {
 	object := make(map[string]any, len(value))
 	for key, child := range value {
-		normalized, err := marshalRONValue(reflect.ValueOf(child), renderers)
+		normalized, err := marshalRONValue(reflect.ValueOf(child), renderers, canonical)
 		if err != nil {
 			return nil, err
 		}
@@ -346,10 +340,10 @@ func marshalStringMap(value map[string]any, renderers []CustomRenderFunc) (map[s
 	return object, nil
 }
 
-func marshalOrderedObject(value orderedObject, renderers []CustomRenderFunc) (orderedObject, error) {
+func marshalOrderedObject(value orderedObject, renderers []CustomRenderFunc, canonical bool) (orderedObject, error) {
 	object := orderedObject{Members: make([]objectMember, 0, len(value.Members))}
 	for _, member := range value.Members {
-		normalized, err := marshalRONValue(reflect.ValueOf(member.Value), renderers)
+		normalized, err := marshalRONValue(reflect.ValueOf(member.Value), renderers, canonical)
 		if err != nil {
 			return orderedObject{}, err
 		}
@@ -358,10 +352,10 @@ func marshalOrderedObject(value orderedObject, renderers []CustomRenderFunc) (or
 	return object, nil
 }
 
-func marshalArrayValue(value reflect.Value, renderers []CustomRenderFunc) ([]any, error) {
+func marshalArrayValue(value reflect.Value, renderers []CustomRenderFunc, canonical bool) ([]any, error) {
 	array := make([]any, value.Len())
 	for i := 0; i < value.Len(); i++ {
-		child, err := marshalRONValue(value.Index(i), renderers)
+		child, err := marshalRONValue(value.Index(i), renderers, canonical)
 		if err != nil {
 			return nil, err
 		}
@@ -370,7 +364,7 @@ func marshalArrayValue(value reflect.Value, renderers []CustomRenderFunc) ([]any
 	return array, nil
 }
 
-func marshalMapValue(value reflect.Value, renderers []CustomRenderFunc) (map[string]any, error) {
+func marshalMapValue(value reflect.Value, renderers []CustomRenderFunc, canonical bool) (map[string]any, error) {
 	if value.IsNil() {
 		return nil, nil
 	}
@@ -381,7 +375,7 @@ func marshalMapValue(value reflect.Value, renderers []CustomRenderFunc) (map[str
 			return nil, err
 		}
 
-		child, err := marshalRONValue(value.MapIndex(key), renderers)
+		child, err := marshalRONValue(value.MapIndex(key), renderers, canonical)
 		if err != nil {
 			return nil, err
 		}
@@ -412,7 +406,7 @@ func marshalMapKeyString(key reflect.Value) (string, error) {
 	return "", fmt.Errorf("ron: unsupported map key type %s", key.Type())
 }
 
-func marshalStructValue(value reflect.Value, renderers []CustomRenderFunc) (orderedObject, error) {
+func marshalStructValue(value reflect.Value, renderers []CustomRenderFunc, canonical bool) (orderedObject, error) {
 	object := orderedObject{Members: make([]objectMember, 0, value.NumField())}
 	valueType := value.Type()
 	for i := 0; i < value.NumField(); i++ {
@@ -431,7 +425,7 @@ func marshalStructValue(value reflect.Value, renderers []CustomRenderFunc) (orde
 			continue
 		}
 
-		child, err := marshalRONValue(fieldValue, renderers)
+		child, err := marshalRONValue(fieldValue, renderers, canonical)
 		if err != nil {
 			return orderedObject{}, err
 		}

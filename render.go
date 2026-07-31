@@ -34,6 +34,14 @@ func writeValueWithCustom(buf *bytes.Buffer, value any, indent string, depth int
 	case uint64:
 		buf.WriteString(strconv.FormatUint(value, 10))
 	case float64:
+		if canonical {
+			body, err := appendRFC8785Number(nil, value)
+			if err != nil {
+				panic(err)
+			}
+			buf.Write(body)
+			return
+		}
 		buf.WriteString(strconv.FormatFloat(value, 'g', -1, 64))
 	case []any:
 		writeArrayWithCustom(buf, value, indent, depth, canonical, renderers)
@@ -303,6 +311,13 @@ func renderScalarWithCustom(value any, canonical bool, renderers []CustomRenderF
 	case uint64:
 		return strconv.FormatUint(value, 10)
 	case float64:
+		if canonical {
+			body, err := appendRFC8785Number(nil, value)
+			if err != nil {
+				panic(err)
+			}
+			return string(body)
+		}
 		return strconv.FormatFloat(value, 'g', -1, 64)
 	case []any:
 		var buf bytes.Buffer
@@ -474,7 +489,7 @@ func objectMembers(value any, canonical bool) []objectMember {
 		sortObjectMembers(members)
 		return members
 	case orderedObject:
-		if !canonical || !value.NeedsSort {
+		if !canonical {
 			return value.Members
 		}
 		members := append([]objectMember(nil), value.Members...)
@@ -519,6 +534,14 @@ func writeCompactValueWithCustom(buf *bytes.Buffer, value any, top, canonical bo
 	case uint64:
 		buf.WriteString(strconv.FormatUint(value, 10))
 	case float64:
+		if canonical {
+			body, err := appendRFC8785Number(nil, value)
+			if err != nil {
+				panic(err)
+			}
+			buf.Write(body)
+			return
+		}
 		buf.WriteString(strconv.FormatFloat(value, 'g', -1, 64))
 	case multilineArray:
 		buf.WriteByte('[')

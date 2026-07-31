@@ -17,6 +17,14 @@ func TestGeoVocabularyFixtures(t *testing.T) {
 			if err != nil {
 				t.Fatalf("FromJSON geo vocabulary: %v", err)
 			}
+			canonicalJSON, err := ToJSON(got, Mode(Canonical))
+			if err != nil {
+				t.Fatalf("ToJSON canonical vocabulary: %v", err)
+			}
+			got, err = FromJSON(canonicalJSON, Mode(Pretty))
+			if err != nil {
+				t.Fatalf("FromJSON sorted vocabulary: %v", err)
+			}
 			assertBytesEqual(t, expected, got)
 
 			jsonBody, err := ToJSON(got)

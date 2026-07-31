@@ -22,6 +22,14 @@ func TestCustomVocabularyFixtures(t *testing.T) {
 			if err != nil {
 				t.Fatalf("FromJSON custom vocabulary: %v", err)
 			}
+			canonicalJSON, err := ToJSON(got, Mode(Canonical), invoiceVocabularyOption())
+			if err != nil {
+				t.Fatalf("ToJSON canonical vocabulary: %v", err)
+			}
+			got, err = FromJSON(canonicalJSON, Mode(Pretty), invoiceVocabularyOption())
+			if err != nil {
+				t.Fatalf("FromJSON sorted vocabulary: %v", err)
+			}
 			assertBytesEqual(t, expected, got)
 
 			jsonBody, err := ToJSON(got, invoiceVocabularyOption())
@@ -57,7 +65,7 @@ func TestCustomVocabularyRendersNativeValues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FromJSON custom native value: %v", err)
 	}
-	assertBytesEqual(t, []byte("amount {#com.example/money [USD '123.45']}"), got)
+	assertBytesEqual(t, []byte("amount {#com.example/money [USD '123.45']}\n"), got)
 }
 
 const invoiceVocabularyURI = "https://example.com/vocab/invoice/v1"

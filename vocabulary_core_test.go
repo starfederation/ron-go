@@ -23,6 +23,14 @@ func TestCoreVocabularyFixtures(t *testing.T) {
 			if err != nil {
 				t.Fatalf("FromJSON core vocabulary: %v", err)
 			}
+			canonicalJSON, err := ToJSON(got, Mode(Canonical), EnableVocabularies(VocabularyCoreV1))
+			if err != nil {
+				t.Fatalf("ToJSON canonical vocabulary: %v", err)
+			}
+			got, err = FromJSON(canonicalJSON, Mode(Pretty), EnableVocabularies(VocabularyCoreV1))
+			if err != nil {
+				t.Fatalf("FromJSON sorted vocabulary: %v", err)
+			}
 			assertBytesEqual(t, expected, got)
 
 			jsonBody, err := ToJSON(got, EnableVocabularies(VocabularyCoreV1))
@@ -113,7 +121,7 @@ func TestCoreVocabularyRendersAPDDecimal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FromJSON #dec: %v", err)
 	}
-	assertBytesEqual(t, []byte("price {#dec '1.23'}"), got)
+	assertBytesEqual(t, []byte("price {#dec '1.23'}\n"), got)
 
 	var buf []byte
 	buf = append(buf, renderScalar(&value, true)...)

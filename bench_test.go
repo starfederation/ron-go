@@ -138,7 +138,7 @@ func BenchmarkToJSONPretty(b *testing.B) {
 	b.ReportAllocs()
 	b.SetBytes(int64(len(benchmarkRON)))
 	for b.Loop() {
-		result, err := ToJSON(benchmarkRON, PrettyJSON("", "  "))
+		result, err := ToJSON(benchmarkRON, Mode(Pretty), JSONIndent("", "  "))
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -146,11 +146,11 @@ func BenchmarkToJSONPretty(b *testing.B) {
 	}
 }
 
-func BenchmarkFromJSONCompact(b *testing.B) {
+func BenchmarkFromJSON(b *testing.B) {
 	b.ReportAllocs()
 	b.SetBytes(int64(len(benchmarkJSON)))
 	for b.Loop() {
-		result, err := FromJSONCompact(benchmarkJSON)
+		result, err := FromJSON(benchmarkJSON, Mode(Compact))
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -158,13 +158,13 @@ func BenchmarkFromJSONCompact(b *testing.B) {
 	}
 }
 
-func BenchmarkFromJSONCompactBuffer(b *testing.B) {
+func BenchmarkFromJSONModeCompactBuffer(b *testing.B) {
 	var buf bytes.Buffer
 	b.ReportAllocs()
 	b.SetBytes(int64(len(benchmarkJSON)))
 	for b.Loop() {
 		buf.Reset()
-		result, err := FromJSONCompactInto(&buf, benchmarkJSON)
+		result, err := FromJSONInto(&buf, benchmarkJSON, Mode(Compact))
 		if err != nil {
 			b.Fatal(err)
 		}

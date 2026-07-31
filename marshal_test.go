@@ -17,7 +17,7 @@ type marshalSample struct {
 }
 
 func TestMarshalReflectsStructsWithRONTagsThenJSONTags(t *testing.T) {
-	got, err := Marshal(marshalSample{
+	got, err := MarshalPretty(marshalSample{
 		ID:     1538289,
 		Name:   "Ada",
 		Alias:  "ron tag wins",
@@ -28,12 +28,12 @@ func TestMarshalReflectsStructsWithRONTagsThenJSONTags(t *testing.T) {
 		t.Fatalf("Marshal: %v", err)
 	}
 
-	want := []byte("id 1538289\nlist [alpha beta]\nname Ada\nronAlias 'ron tag wins'")
+	want := []byte("id 1538289\nname Ada\nronAlias 'ron tag wins'\nlist [alpha beta]\n")
 	assertBytesEqual(t, want, got)
 }
 
-func TestMarshalCompactReflectsMapsAndSlices(t *testing.T) {
-	got, err := MarshalCompact(map[uint64]any{
+func TestMarshalReflectsMapsAndSlices(t *testing.T) {
+	got, err := Marshal(map[uint64]any{
 		1538289: map[string]any{
 			"active": true,
 			"count":  2,
@@ -41,7 +41,7 @@ func TestMarshalCompactReflectsMapsAndSlices(t *testing.T) {
 		},
 	})
 	if err != nil {
-		t.Fatalf("MarshalCompact: %v", err)
+		t.Fatalf("Marshal: %v", err)
 	}
 
 	want := []byte("1538289{active true count 2 name Ada}")
@@ -53,14 +53,16 @@ func TestMaxNestingDepthLimitsSingleDocuments(t *testing.T) {
 		t.Fatalf("ToJSON nesting error = %v, want %v", err, ErrNestingTooDeep)
 	}
 
-	if _, err := Marshal(map[string]any{"item": map[string]bool{"value": true}}, IsPretty(false), MaxNestingDepth(1)); !errors.Is(err, ErrNestingTooDeep) {
-		t.Fatalf("Marshal nesting error = %v, want %v", err, ErrNestingTooDeep)
+	var buf bytes.Buffer
+	encoder := NewEncoder(&buf, Mode(Compact), MaxNestingDepth(1))
+	if err := encoder.Encode(map[string]any{"item": map[string]bool{"value": true}}); !errors.Is(err, ErrNestingTooDeep) {
+		t.Fatalf("Encoder nesting error = %v, want %v", err, ErrNestingTooDeep)
 	}
 }
 
 func TestEncoderEncodeWritesRONValueWithTrailingNewline(t *testing.T) {
 	var buf bytes.Buffer
-	enc := NewEncoder(&buf, IsPretty(false))
+	enc := NewEncoder(&buf, Mode(Compact))
 	if err := enc.Encode(map[string]int{"b": 2}); err != nil {
 		t.Fatalf("Encode: %v", err)
 	}
@@ -70,7 +72,7 @@ func TestEncoderEncodeWritesRONValueWithTrailingNewline(t *testing.T) {
 
 func TestEncoderSetIndentSelectsPrettyOutput(t *testing.T) {
 	var buf bytes.Buffer
-	enc := NewEncoder(&buf, IsPretty(false))
+	enc := NewEncoder(&buf, Mode(Compact))
 	enc.SetIndent("    ")
 	if err := enc.Encode(map[string]any{"outer": map[string]int{"b": 2, "a": 1}}); err != nil {
 		t.Fatalf("Encode: %v", err)
@@ -86,36 +88,36 @@ func TestEncoderReturnsWriterErrors(t *testing.T) {
 	}
 }
 
-func TestMarshalCompactUsesJSONMarshalerForCompatibility(t *testing.T) {
-	got, err := MarshalCompact(customJSONValue{})
+func TestMarshalUsesJSONMarshalerForCompatibility(t *testing.T) {
+	got, err := Marshal(customJSONValue{})
 	if err != nil {
-		t.Fatalf("MarshalCompact custom JSON value: %v", err)
+		t.Fatalf("Marshal custom JSON value: %v", err)
 	}
 
-	assertBytesEqual(t, []byte("id 1538289 name Ada"), got)
+	assertBytesEqual(t, []byte("name Ada id 1538289"), got)
 }
 
-func TestMarshalCompactPreservesByteSliceCompatibility(t *testing.T) {
-	got, err := MarshalCompact([]byte{1, 2})
+func TestMarshalPreservesByteSliceCompatibility(t *testing.T) {
+	got, err := Marshal([]byte{1, 2})
 	if err != nil {
-		t.Fatalf("MarshalCompact byte slice: %v", err)
+		t.Fatalf("Marshal byte slice: %v", err)
 	}
 
 	assertBytesEqual(t, []byte("AQI="), got)
 }
 
-func TestMarshalCompactPreservesNilSliceAndMapCompatibility(t *testing.T) {
+func TestMarshalPreservesNilSliceAndMapCompatibility(t *testing.T) {
 	var array []any
-	arrayRON, err := MarshalCompact(array)
+	arrayRON, err := Marshal(array)
 	if err != nil {
-		t.Fatalf("MarshalCompact nil slice: %v", err)
+		t.Fatalf("Marshal nil slice: %v", err)
 	}
 	assertBytesEqual(t, []byte("null"), arrayRON)
 
 	var object map[string]any
-	objectRON, err := MarshalCompact(object)
+	objectRON, err := Marshal(object)
 	if err != nil {
-		t.Fatalf("MarshalCompact nil map: %v", err)
+		t.Fatalf("Marshal nil map: %v", err)
 	}
 	assertBytesEqual(t, []byte("null"), objectRON)
 }
