@@ -48,6 +48,16 @@ func TestMarshalCompactReflectsMapsAndSlices(t *testing.T) {
 	assertBytesEqual(t, want, got)
 }
 
+func TestMaxNestingDepthLimitsSingleDocuments(t *testing.T) {
+	if _, err := ToJSON([]byte("item {value true}"), MaxNestingDepth(1)); !errors.Is(err, ErrNestingTooDeep) {
+		t.Fatalf("ToJSON nesting error = %v, want %v", err, ErrNestingTooDeep)
+	}
+
+	if _, err := Marshal(map[string]any{"item": map[string]bool{"value": true}}, IsPretty(false), MaxNestingDepth(1)); !errors.Is(err, ErrNestingTooDeep) {
+		t.Fatalf("Marshal nesting error = %v, want %v", err, ErrNestingTooDeep)
+	}
+}
+
 func TestEncoderEncodeWritesRONValueWithTrailingNewline(t *testing.T) {
 	var buf bytes.Buffer
 	enc := NewEncoder(&buf, IsPretty(false))
