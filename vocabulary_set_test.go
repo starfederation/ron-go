@@ -35,7 +35,7 @@ func TestSetVocabularyFixtures(t *testing.T) {
 			if err != nil {
 				t.Fatalf("FromJSON set vocabulary round trip: %v", err)
 			}
-			assertBytesEqual(t, got, roundTrip)
+			assertBytesEqual(t, expected, roundTrip)
 		})
 	}
 }
@@ -57,19 +57,23 @@ func TestSetVocabularyInvalidFixtures(t *testing.T) {
 }
 
 func TestCanonicalSetVocabularyNormalizesPayloads(t *testing.T) {
-	jsonInput := []byte(`{"set":{"#set":["writer","admin","writer"]},"bits":{"#bits":[10,[3,5],1,3,4,[5,7]]}}`)
-	got, err := FromJSON(jsonInput, Mode(Canonical))
+	root, _ := loadVocabularyManifest(t)
+	input := readConformanceFile(t, root, "set/input.json")
+	expectedRON := readRONValueFixture(t, root, "set/expected.ron")
+
+	got, err := FromJSON(input, Mode(Canonical))
 	if err != nil {
 		t.Fatalf("FromJSON canonical set vocabulary: %v", err)
 	}
-	assertBytesEqual(t, []byte("bits{#bits[1 [3 7] 10]} set{#set[admin writer]}"), got)
-
-	ronInput := []byte("set {#set [writer admin writer]} bits {#bits [10 [3 5] 1 3 4 [5 7]]}")
-	jsonOutput, err := ToJSON(ronInput, Mode(Canonical))
+	gotJSON, err := ToJSON(got, Mode(Canonical))
 	if err != nil {
 		t.Fatalf("ToJSON canonical set vocabulary: %v", err)
 	}
-	assertBytesEqual(t, []byte(`{"bits":{"#bits":[1,[3,7],10]},"set":{"#set":["admin","writer"]}}`), jsonOutput)
+	expectedJSON, err := ToJSON(expectedRON, Mode(Canonical))
+	if err != nil {
+		t.Fatalf("ToJSON expected set vocabulary: %v", err)
+	}
+	assertBytesEqual(t, expectedJSON, gotJSON)
 }
 
 func TestSetVocabularyParsesNativeValues(t *testing.T) {

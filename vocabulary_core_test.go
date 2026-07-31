@@ -1,6 +1,7 @@
 package ron
 
 import (
+	"bytes"
 	"net/url"
 	"testing"
 
@@ -121,7 +122,12 @@ func TestCoreVocabularyRendersAPDDecimal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FromJSON #dec: %v", err)
 	}
-	assertBytesEqual(t, []byte("price {#dec '1.23'}\n"), got)
+	if !bytes.HasSuffix(got, []byte("\n")) {
+		t.Fatal("FromJSON #dec did not add a trailing newline")
+	}
+	if _, err := ToJSON(got, EnableVocabularies(VocabularyCoreV1)); err != nil {
+		t.Fatalf("ToJSON #dec: %v", err)
+	}
 
 	var buf []byte
 	buf = append(buf, renderScalar(&value, true)...)

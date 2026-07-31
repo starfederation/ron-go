@@ -65,7 +65,8 @@ func TestCustomVocabularyRendersNativeValues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FromJSON custom native value: %v", err)
 	}
-	assertBytesEqual(t, []byte("amount {#com.example/money [USD '123.45']}\n"), got)
+	root, _ := loadVocabularyManifest(t)
+	assertBytesEqual(t, readRONValueFixture(t, root, "custom/expected.ron"), got)
 }
 
 const invoiceVocabularyURI = "https://example.com/vocab/invoice/v1"

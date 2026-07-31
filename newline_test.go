@@ -5,82 +5,86 @@ import (
 	"testing"
 )
 
-func TestPrettyRONByteAPIsEndWithNewline(t *testing.T) {
-	multiline := []byte("list [\n  {\n    a 1\n    b 2\n  }\n  {\n    c 3\n    d 4\n  }\n]\nouter {\n  a 1\n  b 2\n}\n")
+func TestRONByteAPIsUseReferenceGoldens(t *testing.T) {
+	root, _ := loadConformanceManifest(t)
 	cases := []struct {
-		name  string
-		input []byte
-		want  []byte
+		name string
+		path string
 	}{
-		{"scalar", []byte(`true`), []byte("true\n")},
-		{"array", []byte(`[1,2]`), []byte("[1 2]\n")},
-		{"empty object", []byte(`{}`), []byte("{}\n")},
-		{"brace-elided object", []byte(`{"a":1,"b":2}`), []byte("a 1\nb 2\n")},
-		{"multiline indentation", []byte(`{"list":[{"a":1,"b":2},{"c":3,"d":4}],"outer":{"a":1,"b":2}}`), multiline},
+		{"scalar", "valid/ported/valid/y_root_scalar_false"},
+		{"array", "valid/ported/valid/y_structure_array_empty"},
+		{"empty object", "valid/ported/valid/y_structure_object_empty"},
+		{"root object", "valid/ron_only/valid/top_level_elided_map"},
+		{"multiline", "valid/basic/records"},
 	}
-	for _, test := range cases {
-		t.Run(test.name, func(t *testing.T) {
-			got, err := FromJSON(test.input, Mode(Pretty))
-			if err != nil {
-				t.Fatalf("FromJSON: %v", err)
-			}
-			assertBytesEqual(t, test.want, got)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			input := readConformanceFile(t, root, tc.path+"/input.json")
+			for _, check := range []struct {
+				mode OutputMode
+				path string
+			}{
+				{Pretty, "expected.pretty.ron"},
+				{Compact, "expected.compact.ron"},
+				{Canonical, "expected.canonical.ron"},
+			} {
+				expected := readConformanceFile(t, root, tc.path+"/"+check.path)
+				got, err := FromJSON(input, Mode(check.mode))
+				if err != nil {
+					t.Fatalf("FromJSON %s: %v", check.mode, err)
+				}
+				assertBytesEqual(t, expected, got)
 
-			var buffer bytes.Buffer
-			buffer.WriteString("prefix:")
-			got, err = FromJSONInto(&buffer, test.input, Mode(Pretty))
-			if err != nil {
-				t.Fatalf("FromJSONInto: %v", err)
+				var buffer bytes.Buffer
+				buffer.WriteString("prefix:")
+				got, err = FromJSONInto(&buffer, input, Mode(check.mode))
+				if err != nil {
+					t.Fatalf("FromJSONInto %s: %v", check.mode, err)
+				}
+				prefixed := append(append([]byte{}, "prefix:"...), expected...)
+				assertBytesEqual(t, prefixed, got)
+				assertBytesEqual(t, prefixed, buffer.Bytes())
 			}
-			assertBytesEqual(t, append([]byte("prefix:"), test.want...), got)
 		})
 	}
 }
 
-func TestCompactAndCanonicalRONByteAPIsOmitTrailingNewline(t *testing.T) {
-	input := []byte(`{"b":1,"a":[2,3]}`)
-	cases := []struct {
-		mode OutputMode
-		want []byte
+func TestJSONByteAPIsUseReferenceGoldens(t *testing.T) {
+	root, _ := loadConformanceManifest(t)
+	for _, tc := range []struct {
+		name string
+		path string
 	}{
-		{Compact, []byte("b 1 a[2 3]")},
-		{Canonical, []byte("a[2 3] b 1")},
-	}
-	for _, test := range cases {
-		got, err := FromJSON(input, Mode(test.mode))
-		if err != nil {
-			t.Fatalf("FromJSON %s: %v", test.mode, err)
-		}
-		assertBytesEqual(t, test.want, got)
-		if bytes.HasSuffix(got, []byte("\n")) {
-			t.Fatalf("FromJSON %s added newline", test.mode)
-		}
-	}
-}
+		{"records", "valid/basic/records"},
+		{"negative zero", "valid/ported/valid/y_number_negative_zero"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			input := readConformanceFile(t, root, tc.path+"/input.ron")
+			for _, check := range []struct {
+				mode OutputMode
+				path string
+			}{
+				{Pretty, "expected.pretty.json"},
+				{Compact, "expected.compact.json"},
+				{Canonical, "expected.canonical.json"},
+			} {
+				expected := readConformanceFile(t, root, tc.path+"/"+check.path)
+				got, err := ToJSON(input, Mode(check.mode))
+				if err != nil {
+					t.Fatalf("ToJSON %s: %v", check.mode, err)
+				}
+				assertBytesEqual(t, expected, got)
 
-func TestJSONByteAPIsAndConversionBuffer(t *testing.T) {
-	input := []byte("a 1\nb [2 3]")
-	cases := []struct {
-		mode OutputMode
-		want []byte
-	}{
-		{Compact, []byte(`{"a":1,"b":[2,3]}`)},
-		{Pretty, []byte("{\n  \"a\": 1,\n  \"b\": [\n    2,\n    3\n  ]\n}")},
-		{Canonical, []byte(`{"a":1,"b":[2,3]}`)},
-	}
-	for _, test := range cases {
-		got, err := ToJSON(input, Mode(test.mode))
-		if err != nil {
-			t.Fatalf("ToJSON %s: %v", test.mode, err)
-		}
-		assertBytesEqual(t, test.want, got)
-
-		var buffer bytes.Buffer
-		buffer.WriteString("prefix:")
-		got, err = ToJSONInto(&buffer, input, Mode(test.mode))
-		if err != nil {
-			t.Fatalf("ToJSONInto %s: %v", test.mode, err)
-		}
-		assertBytesEqual(t, append([]byte("prefix:"), test.want...), got)
+				var buffer bytes.Buffer
+				buffer.WriteString("prefix:")
+				got, err = ToJSONInto(&buffer, input, Mode(check.mode))
+				if err != nil {
+					t.Fatalf("ToJSONInto %s: %v", check.mode, err)
+				}
+				prefixed := append(append([]byte{}, "prefix:"...), expected...)
+				assertBytesEqual(t, prefixed, got)
+				assertBytesEqual(t, prefixed, buffer.Bytes())
+			}
+		})
 	}
 }

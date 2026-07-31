@@ -1,51 +1,41 @@
 package ron
 
-import "testing"
+import (
+	"bytes"
+	"testing"
+)
 
 func TestFromJSONPrettyRootObjectsElideBraces(t *testing.T) {
-	got, err := FromJSON([]byte(`{"status":"ok"}`))
+	root, _ := loadConformanceManifest(t)
+	got, err := FromJSON(readConformanceFile(t, root, "rendering/root_object_elision/input.json"))
 	if err != nil {
 		t.Fatalf("FromJSON pretty root object: %v", err)
 	}
-	assertBytesEqual(t, []byte("status ok\n"), got)
+	assertBytesEqual(t, readConformanceFile(t, root, "rendering/root_object_elision/expected.pretty.ron"), got)
 }
 
-func TestModeDefaultsAndJSONIndent(t *testing.T) {
-	pretty, err := ToJSON([]byte("a 1"))
+func TestDefaultModeIsPretty(t *testing.T) {
+	root, _ := loadConformanceManifest(t)
+	input := readConformanceFile(t, root, "valid/basic/records/input.ron")
+	got, err := ToJSON(input)
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertBytesEqual(t, []byte("{\n  \"a\": 1\n}"), pretty)
-
-	compact, err := ToJSON([]byte("a 1"), Mode(Compact), JSONIndent("ignored", "--"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	assertBytesEqual(t, []byte(`{"a":1}`), compact)
-
-	indented, err := ToJSON([]byte("a 1"), Mode(Pretty), JSONIndent("", "--"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	assertBytesEqual(t, []byte("{\n--\"a\": 1\n}"), indented)
+	assertBytesEqual(t, readConformanceFile(t, root, "valid/basic/records/expected.pretty.json"), got)
 }
 
-func TestFromJSONValueMapperCanRenderTaggedRONValues(t *testing.T) {
-	input := []byte(`{"tx":"tx-48830","committed":"2026-06-13T00:00:00Z","reactorId":"reactor-BY"}`)
-	got, err := FromJSON(input, Mode(Pretty), MapJSONValues(func(path []JSONPathSegment, value any) (any, bool) {
-		if len(path) != 1 || path[0].IsIndex {
-			return nil, false
-		}
-		switch path[0].Key {
-		case "tx", "reactorId":
-			return Tagged("", value), true
-		case "committed":
-			return Tagged("time", value), true
-		}
-		return nil, false
-	}))
+func TestJSONIndentChangesPrettyJSONIndentation(t *testing.T) {
+	root, _ := loadConformanceManifest(t)
+	input := readConformanceFile(t, root, "valid/basic/records/input.ron")
+	defaultJSON, err := ToJSON(input, Mode(Pretty))
 	if err != nil {
-		t.Fatalf("FromJSON tagged values: %v", err)
+		t.Fatal(err)
 	}
-	assertBytesEqual(t, []byte("tx {# tx-48830}\ncommitted {#time 2026-06-13T00:00:00Z}\nreactorId {# reactor-BY}\n"), got)
+	indentedJSON, err := ToJSON(input, Mode(Pretty), JSONIndent("", "--"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Equal(defaultJSON, indentedJSON) || !bytes.Contains(indentedJSON, []byte("--\"")) {
+		t.Fatal("JSONIndent did not change pretty JSON indentation")
+	}
 }

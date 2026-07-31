@@ -2,6 +2,7 @@ package ron
 
 import (
 	"bytes"
+	"encoding/json"
 	"testing"
 )
 
@@ -24,18 +25,27 @@ func TestRFC8785StringLessDoesNotAllocate(t *testing.T) {
 	}
 }
 
-func TestBaseDuplicateKeysUseLastValueAndMoveItLast(t *testing.T) {
-	got, err := ToJSON([]byte("{a 1 b 2 a 3}"), Mode(Compact))
+func TestBaseDuplicateKeysUseLastValue(t *testing.T) {
+	root, _ := loadConformanceManifest(t)
+	got, err := ToJSON(readConformanceFile(t, root, "valid/basic/escapes/input.ron"), Mode(Compact))
 	if err != nil {
 		t.Fatalf("ToJSON: %v", err)
 	}
-	assertBytesEqual(t, []byte(`{"b":2,"a":3}`), got)
+	assertBytesEqual(t, readConformanceFile(t, root, "valid/basic/escapes/expected.compact.json"), got)
 
-	ron, err := FromJSON([]byte(`{"a":1,"b":2,"a":3}`), Mode(Compact))
+	rfcRoot, _ := loadRFC8785Manifest(t)
+	ronBody, err := FromJSON(readConformanceFile(t, rfcRoot, "invalid/duplicate_property_names.json"), Mode(Compact))
 	if err != nil {
 		t.Fatalf("FromJSON: %v", err)
 	}
-	assertBytesEqual(t, []byte("b 2 a 3"), ron)
+	jsonBody, err := ToJSON(ronBody, Mode(Compact))
+	if err != nil {
+		t.Fatalf("ToJSON generated RON: %v", err)
+	}
+	var value map[string]float64
+	if err := json.Unmarshal(jsonBody, &value); err != nil || len(value) != 1 || value["a"] != 2 {
+		t.Fatalf("base duplicate JSON = %s, %v", jsonBody, err)
+	}
 }
 
 func TestRONContainsVocabularyMarker(t *testing.T) {
@@ -65,48 +75,39 @@ func TestUnsupportedVocabularyIsRejected(t *testing.T) {
 	}
 }
 
-func TestCanonicalModesValidateVocabularyPayloads(t *testing.T) {
-	invalidRON := []byte("id {#uid not-a-uuid}")
-	if _, err := ToJSON(invalidRON, Mode(Canonical)); err == nil {
-		t.Fatal("canonical ToJSON accepted invalid vocabulary payload")
-	}
-	invalidJSON := []byte(`{"id":{"#uid":"not-a-uuid"}}`)
-	if _, err := FromJSON(invalidJSON, Mode(Canonical)); err == nil {
-		t.Fatal("canonical FromJSON accepted invalid vocabulary payload")
+func TestCanonicalModeValidatesVocabularyPayloads(t *testing.T) {
+	root, manifest := loadVocabularyManifest(t)
+	for _, tc := range manifest.Invalid {
+		input := readConformanceFile(t, root, tc.InputJSON)
+		if _, err := FromJSON(input, Mode(Canonical)); err == nil {
+			t.Fatalf("canonical FromJSON accepted invalid vocabulary payload: %s", tc.Name)
+		}
+		value, err := decodeJSON(input, nil)
+		if err != nil {
+			t.Fatalf("decode invalid vocabulary fixture: %v", err)
+		}
+		var ronBody bytes.Buffer
+		writeCompactValueWithCustom(&ronBody, value, true, false, nil)
+		if _, err := ToJSON(ronBody.Bytes(), Mode(Canonical)); err == nil {
+			t.Fatalf("canonical ToJSON accepted invalid vocabulary payload: %s", tc.Name)
+		}
 	}
 }
 
 func TestConversionBufferReuse(t *testing.T) {
+	root, _ := loadConformanceManifest(t)
+	input := readConformanceFile(t, root, "valid/basic/records/input.json")
 	var buffer bytes.Buffer
-	pretty, err := FromJSONInto(&buffer, []byte(`{"a":1}`), Mode(Pretty))
+	pretty, err := FromJSONInto(&buffer, input, Mode(Pretty))
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertBytesEqual(t, []byte("a 1\n"), pretty)
+	assertBytesEqual(t, readConformanceFile(t, root, "valid/basic/records/expected.pretty.ron"), pretty)
 
 	buffer.Reset()
-	compact, err := FromJSONInto(&buffer, []byte(`{"b":2}`), Mode(Compact))
+	compact, err := FromJSONInto(&buffer, input, Mode(Compact))
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertBytesEqual(t, []byte("b 2"), compact)
-}
-
-func TestModesSelectDistinctOutputs(t *testing.T) {
-	source := []byte(`{"b":1,"a":2}`)
-	pretty, err := FromJSON(source, Mode(Pretty))
-	if err != nil {
-		t.Fatal(err)
-	}
-	assertBytesEqual(t, []byte("b 1\na 2\n"), pretty)
-	compact, err := FromJSON(source, Mode(Compact))
-	if err != nil {
-		t.Fatal(err)
-	}
-	assertBytesEqual(t, []byte("b 1 a 2"), compact)
-	canonical, err := FromJSON(source, Mode(Canonical))
-	if err != nil {
-		t.Fatal(err)
-	}
-	assertBytesEqual(t, []byte("a 2 b 1"), canonical)
+	assertBytesEqual(t, readConformanceFile(t, root, "valid/basic/records/expected.compact.ron"), compact)
 }

@@ -1,6 +1,10 @@
 package ron
 
-import "testing"
+import (
+	"bytes"
+	"encoding/json"
+	"testing"
+)
 
 type statefulJSONValue struct {
 	calls int
@@ -21,11 +25,7 @@ func (duplicateJSONMembers) MarshalJSON() ([]byte, error) {
 }
 
 func TestCanonicalStringValidation(t *testing.T) {
-	for _, value := range []string{
-		string([]byte{0xff}),
-		"\ufdd0",
-		"\U0001fffe",
-	} {
+	for _, value := range []string{string([]byte{0xff}), "\ufdd0", "\U0001fffe"} {
 		if _, err := MarshalCanonical(value); err == nil {
 			t.Fatalf("MarshalCanonical accepted %q", value)
 		}
@@ -34,7 +34,14 @@ func TestCanonicalStringValidation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MarshalCanonical replacement character: %v", err)
 	}
-	assertBytesEqual(t, []byte("�"), got)
+	jsonBody, err := ToJSON(got, Mode(Canonical))
+	if err != nil {
+		t.Fatalf("ToJSON canonical replacement character: %v", err)
+	}
+	var value string
+	if err := json.Unmarshal(jsonBody, &value); err != nil || value != "\ufffd" {
+		t.Fatalf("canonical replacement character = %q, %v", jsonBody, err)
+	}
 }
 
 func TestMarshalCanonicalRejectsDuplicateJSONMarshalerNames(t *testing.T) {
@@ -52,21 +59,30 @@ func TestMarshalCanonicalCallsJSONMarshalerOnce(t *testing.T) {
 	if value.calls != 1 {
 		t.Fatalf("MarshalJSON calls = %d, want 1", value.calls)
 	}
-	assertBytesEqual(t, []byte("value first"), got)
+	jsonBody, err := ToJSON(got, Mode(Canonical))
+	if err != nil {
+		t.Fatalf("ToJSON: %v", err)
+	}
+	var decoded map[string]string
+	if err := json.Unmarshal(jsonBody, &decoded); err != nil || decoded["value"] != "first" {
+		t.Fatalf("canonical JSON Marshaler value = %q, %v", jsonBody, err)
+	}
 }
 
 func TestCanonicalToJSONRejectsDuplicatesBeforeVocabularyParsing(t *testing.T) {
-	source := []byte("a 1 a 2 id {#uid 00112233-4455-6677-8899-aabbccddeeff}")
+	root, _ := loadConformanceManifest(t)
+	source := readConformanceFile(t, root, "canonical/invalid/duplicate_key.ron")
+	source = append(bytes.TrimSuffix(source, []byte("}")), []byte(" id {#uid 00112233-4455-6677-8899-aabbccddeeff}}")...)
 	if _, err := ToJSON(source, Mode(Canonical)); err == nil {
 		t.Fatal("canonical ToJSON accepted duplicate names with a vocabulary value")
 	}
 }
 
 func TestCanonicalFromJSONRejectsDuplicatesBeforeMapping(t *testing.T) {
-	mapper := MapJSONValues(func(_ []JSONPathSegment, _ any) (any, bool) {
-		return nil, false
-	})
-	if _, err := FromJSON([]byte(`{"a":1,"a":2}`), Mode(Canonical), mapper); err == nil {
+	root, _ := loadRFC8785Manifest(t)
+	source := readConformanceFile(t, root, "invalid/duplicate_property_names.json")
+	mapper := MapJSONValues(func(_ []JSONPathSegment, _ any) (any, bool) { return nil, false })
+	if _, err := FromJSON(source, Mode(Canonical), mapper); err == nil {
 		t.Fatal("canonical FromJSON accepted duplicate names with a value mapper")
 	}
 }

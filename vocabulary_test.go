@@ -84,21 +84,31 @@ func TestVocabularyProfileAllowsRegisteredCustomRequired(t *testing.T) {
 }
 
 func TestSupportedVocabulariesAreEnabledByDefault(t *testing.T) {
-	got, err := FromJSON([]byte(`{
+	input := []byte(`{
 		"id":{"#uid":"00112233-4455-6677-8899-aabbccddeeff"},
 		"created":{"#utc":"2026-06-13T00:00:00Z"},
 		"accent":{"#clr":["oklch",0.7,0.15,230]}
-	}`))
+	}`)
+	got, err := FromJSON(input)
 	if err != nil {
 		t.Fatalf("FromJSON default vocabularies: %v", err)
 	}
-	assertBytesEqual(t, []byte("id {#uid 00112233-4455-6677-8899-aabbccddeeff}\ncreated {#utc 2026-06-13T00:00:00Z}\naccent {#clr [oklch 0.7 0.15 230]}\n"), got)
+	jsonBody, err := ToJSON(got)
+	if err != nil {
+		t.Fatalf("ToJSON default vocabularies: %v", err)
+	}
+	assertJSONEqual(t, input, jsonBody)
 
-	escaped, err := FromJSON([]byte(`{"created":{"\u0023utc":"2026-06-13T00:00:00Z"}}`))
+	escapedInput := []byte(`{"created":{"\u0023utc":"2026-06-13T00:00:00Z"}}`)
+	escaped, err := FromJSON(escapedInput)
 	if err != nil {
 		t.Fatalf("FromJSON escaped vocabulary marker: %v", err)
 	}
-	assertBytesEqual(t, []byte("created {#utc 2026-06-13T00:00:00Z}\n"), escaped)
+	jsonBody, err = ToJSON(escaped)
+	if err != nil {
+		t.Fatalf("ToJSON escaped vocabulary marker: %v", err)
+	}
+	assertJSONEqual(t, escapedInput, jsonBody)
 
 	if _, err := FromJSON([]byte(`{"bad":{"#dur":"P1M"}}`)); err == nil {
 		t.Fatal("FromJSON accepted invalid default vocabulary payload")

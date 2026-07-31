@@ -30,7 +30,7 @@
           proxyVendor = true;
 
           preCheck = ''
-            ln -s ${ron}/testdata testdata
+            export RON_TESTDATA_DIR=${ron}/testdata
           '';
         };
       });
@@ -42,15 +42,6 @@
             pkgs.gopls
           ];
 
-          shellHook = ''
-            if [ ! -e testdata ]; then
-              ln -s ${ron}/testdata testdata
-            elif [ -L testdata ]; then
-              ln -sfn ${ron}/testdata testdata
-            else
-              echo "testdata exists and is not a symlink; leaving it alone" >&2
-            fi
-          '';
         };
       });
     };

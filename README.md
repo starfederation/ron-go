@@ -145,14 +145,14 @@ Run with Nix:
 nix flake check
 ```
 
-`nix develop` creates a local `testdata` symlink to the pinned flake input, so plain Go tests work inside the shell:
+Plain Go tests use the sibling reference repository at `../ron/testdata`:
 
 ```sh
 nix develop
 go test ./...
 ```
 
-Without Nix, set `RON_TESTDATA_DIR=/path/to/ron/testdata` or provide local `testdata/conformance`, `testdata/rfc8785`, and `testdata/vocabularies` directories. Otherwise testdata-backed tests are skipped.
+Set `RON_TESTDATA_DIR` only when the reference repository is at a different path. Missing or stale fixtures fail the tests.
 
 To update to the latest reference corpus:
 

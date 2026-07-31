@@ -300,7 +300,7 @@ func testdataSubdir(t *testing.T, subdir string) string {
 	t.Helper()
 	root := os.Getenv("RON_TESTDATA_DIR")
 	if root == "" {
-		root = "testdata"
+		root = filepath.Join("..", "ron", "testdata")
 	}
 	path := filepath.Join(root, subdir)
 	manifestPath := filepath.Join(path, "manifest.json")
