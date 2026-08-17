@@ -79,6 +79,25 @@ func TestMarshalReflectsMapsAndSlices(t *testing.T) {
 	}
 }
 
+func TestMarshalPrettyHandlesDeepUnaryNesting(t *testing.T) {
+	value := deeplyNestedUnaryValue(64)
+	got, err := MarshalPretty(value)
+	if err != nil {
+		t.Fatalf("MarshalPretty: %v", err)
+	}
+	gotJSON, err := ToJSON(got, Mode(Canonical))
+	if err != nil {
+		t.Fatalf("ToJSON: %v", err)
+	}
+	wantJSON, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	if !bytes.Equal(gotJSON, wantJSON) {
+		t.Fatal("deeply nested pretty output changed its value")
+	}
+}
+
 func TestMaxNestingDepthLimitsSingleDocuments(t *testing.T) {
 	if _, err := ToJSON([]byte("item {value true}"), MaxNestingDepth(1)); !errors.Is(err, ErrNestingTooDeep) {
 		t.Fatalf("ToJSON nesting error = %v, want %v", err, ErrNestingTooDeep)
