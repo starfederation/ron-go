@@ -232,3 +232,29 @@ func BenchmarkRenderRONPretty(b *testing.B) {
 		benchmarkResult = buf.Bytes()
 	}
 }
+
+func BenchmarkRenderRONPrettyDeepUnaryNesting(b *testing.B) {
+	for _, depth := range []int{8, 16, 32, 64, 128} {
+		b.Run(strconv.Itoa(depth), func(b *testing.B) {
+			value := deeplyNestedUnaryValue(depth)
+			b.ReportAllocs()
+			for b.Loop() {
+				var buf bytes.Buffer
+				writeValueWithCustom(&buf, value, "  ", 0, false, nil)
+				benchmarkResult = buf.Bytes()
+			}
+		})
+	}
+}
+
+func deeplyNestedUnaryValue(depth int) any {
+	var value any = "leaf"
+	for level := range depth {
+		if level%2 == 0 {
+			value = []any{value}
+			continue
+		}
+		value = map[string]any{"and": value}
+	}
+	return value
+}
